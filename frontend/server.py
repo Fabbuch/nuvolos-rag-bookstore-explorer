@@ -8,7 +8,11 @@ class CORSRequestHandler(SimpleHTTPRequestHandler):
     """HTTP request handler with CORS support."""
     
     def end_headers(self):
-        """Add CORS headers to all responses."""
+        """
+        Add CORS headers to all responses.
+        WARNING: In production, restrict Access-Control-Allow-Origin to specific domains.
+        This is configured for development/example purposes only.
+        """
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')

@@ -4,7 +4,7 @@ Ultra minimal RAG backend server with pgvector integration.
 import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from typing import List, Dict
@@ -13,9 +13,11 @@ import json
 app = FastAPI(title="RAG Backend API")
 
 # Enable CORS for frontend
+# WARNING: In production, restrict allow_origins to specific domains
+# For development/example purposes, allowing all origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # TODO: Restrict to specific origins in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -78,11 +80,31 @@ def init_db():
 
 class Document(BaseModel):
     content: str
+    
+    @validator('content')
+    def validate_content(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Content cannot be empty')
+        if len(v) > 10000:  # 10KB limit
+            raise ValueError('Content exceeds maximum length of 10000 characters')
+        return v
 
 
 class Query(BaseModel):
     query: str
     top_k: int = 3
+    
+    @validator('query')
+    def validate_query(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Query cannot be empty')
+        return v
+    
+    @validator('top_k')
+    def validate_top_k(cls, v):
+        if v < 1 or v > 100:
+            raise ValueError('top_k must be between 1 and 100')
+        return v
 
 
 @app.on_event("startup")
@@ -100,6 +122,7 @@ async def root():
 @app.get("/health")
 async def health():
     """Health check endpoint."""
+    conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -108,12 +131,15 @@ async def health():
         conn.close()
         return {"status": "healthy", "database": "connected"}
     except Exception as e:
+        if conn:
+            conn.close()
         raise HTTPException(status_code=503, detail=f"Database connection failed: {str(e)}")
 
 
 @app.post("/documents")
 async def add_document(document: Document):
     """Add a document to the database with a simple embedding."""
+    conn = None
     try:
         # Create a simple embedding (bag of words representation)
         # In a real application, you would use a proper embedding model
@@ -134,12 +160,15 @@ async def add_document(document: Document):
         
         return {"id": doc_id, "message": "Document added successfully"}
     except Exception as e:
+        if conn:
+            conn.close()
         raise HTTPException(status_code=500, detail=f"Error adding document: {str(e)}")
 
 
 @app.get("/documents")
 async def list_documents():
     """List all documents in the database."""
+    conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -152,12 +181,15 @@ async def list_documents():
         
         return {"documents": documents}
     except Exception as e:
+        if conn:
+            conn.close()
         raise HTTPException(status_code=500, detail=f"Error listing documents: {str(e)}")
 
 
 @app.post("/query")
 async def query_documents(query: Query):
     """Query documents using vector similarity search."""
+    conn = None
     try:
         # Create embedding for the query
         query_embedding = create_simple_embedding(query.query)
@@ -195,6 +227,8 @@ async def query_documents(query: Query):
             "response": response
         }
     except Exception as e:
+        if conn:
+            conn.close()
         raise HTTPException(status_code=500, detail=f"Error querying documents: {str(e)}")
 
 
@@ -202,6 +236,10 @@ def create_simple_embedding(text: str) -> str:
     """
     Create a simple embedding vector from text.
     This is a placeholder for demonstration. In production, use a proper embedding model.
+    
+    Note: This function only processes the first 384 characters for position-based features.
+    For longer texts, most content is ignored. In production, use a proper embedding model
+    that can handle arbitrary length text (e.g., sentence-transformers, OpenAI embeddings).
     """
     # Simple character frequency based embedding (384 dimensions)
     embedding = [0.0] * 384
@@ -213,10 +251,11 @@ def create_simple_embedding(text: str) -> str:
     for i, char in enumerate(text[:384]):
         embedding[i] = (ord(char) % 256) / 256.0
     
-    # Add some word-based features
+    # Add some word-based features with deterministic hashing
     words = text.split()
     for i, word in enumerate(words[:192]):
-        idx = (hash(word) % 192) + 192
+        # Use a deterministic hash by encoding to bytes
+        idx = (hash(word.encode('utf-8')) % 192) + 192
         embedding[idx] = min(embedding[idx] + 0.1, 1.0)
     
     return "[" + ",".join(map(str, embedding)) + "]"
@@ -235,8 +274,13 @@ def generate_simple_answer(query: str, results: List[Dict]) -> str:
     
     # Find the most relevant document
     best_match = results[0]
+    content = best_match['content']
     
-    return f"Based on the documents, here's what I found: {best_match['content'][:200]}..."
+    # Only add ellipsis if content is actually truncated
+    if len(content) > 200:
+        return f"Based on the documents, here's what I found: {content[:200]}..."
+    else:
+        return f"Based on the documents, here's what I found: {content}"
 
 
 if __name__ == "__main__":

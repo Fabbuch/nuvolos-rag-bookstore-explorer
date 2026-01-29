@@ -6,6 +6,8 @@ services:
     image: pgvector/pgvector:pg16
     container_name: rag-postgres
     environment:
+      # WARNING: For production, use Docker secrets or a secrets manager
+      # instead of plain text environment variables
       POSTGRES_DB: ragdb
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
