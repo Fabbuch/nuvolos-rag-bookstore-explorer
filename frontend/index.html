@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG AI Example</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .card h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 5px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s;
+            width: 100%;
+            font-weight: 600;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            font-weight: 500;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .documents-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .document-item {
+            padding: 10px;
+            border: 1px solid #e0e0e0;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            background: #f9f9f9;
+        }
+
+        .document-item strong {
+            color: #667eea;
+        }
+
+        .response-area {
+            background: #f9f9f9;
+            border: 1px solid #e0e0e0;
+            border-radius: 5px;
+            padding: 15px;
+            min-height: 200px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+
+        .full-width {
+            grid-column: 1 / -1;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 RAG AI Example</h1>
+            <p>Ultra Minimal Retrieval Augmented Generation</p>
+        </div>
+
+        <div class="main-content">
+            <!-- Add Document Section -->
+            <div class="card">
+                <h2>📝 Add Document</h2>
+                <div id="addStatus"></div>
+                <form id="addDocumentForm">
+                    <div class="form-group">
+                        <label for="documentContent">Document Content:</label>
+                        <textarea id="documentContent" required placeholder="Enter your document content here..."></textarea>
+                    </div>
+                    <button type="submit">Add Document</button>
+                </form>
+            </div>
+
+            <!-- Query Section -->
+            <div class="card">
+                <h2>🔍 Query Documents</h2>
+                <div id="queryStatus"></div>
+                <form id="queryForm">
+                    <div class="form-group">
+                        <label for="queryText">Your Question:</label>
+                        <input type="text" id="queryText" required placeholder="Ask a question...">
+                    </div>
+                    <div class="form-group">
+                        <label for="topK">Number of Results:</label>
+                        <input type="number" id="topK" value="3" min="1" max="10">
+                    </div>
+                    <button type="submit">Search</button>
+                </form>
+            </div>
+
+            <!-- Documents List -->
+            <div class="card">
+                <h2>📚 Documents in Database</h2>
+                <button onclick="loadDocuments()" style="margin-bottom: 15px;">Refresh List</button>
+                <div id="documentsList" class="documents-list"></div>
+            </div>
+
+            <!-- Query Response -->
+            <div class="card">
+                <h2>💬 Response</h2>
+                <div id="responseArea" class="response-area">No query yet. Ask a question to see results here.</div>
+            </div>
+        </div>
+
+        <!-- Health Status -->
+        <div class="card full-width">
+            <h2>🏥 System Status</h2>
+            <div id="healthStatus"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8000';
+
+        // Check health on load
+        window.addEventListener('load', () => {
+            checkHealth();
+            loadDocuments();
+        });
+
+        async function checkHealth() {
+            const statusDiv = document.getElementById('healthStatus');
+            try {
+                const response = await fetch(`${API_URL}/health`);
+                const data = await response.json();
+                statusDiv.innerHTML = `<div class="status success">✓ Backend: ${data.status} | Database: ${data.database}</div>`;
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">✗ Backend is not responding. Make sure the backend server is running on port 8000.</div>`;
+            }
+        }
+
+        // Add Document Form
+        document.getElementById('addDocumentForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const statusDiv = document.getElementById('addStatus');
+            const content = document.getElementById('documentContent').value;
+            const button = e.target.querySelector('button');
+            
+            button.disabled = true;
+            statusDiv.innerHTML = '<div class="status info">Adding document...</div>';
+
+            try {
+                const response = await fetch(`${API_URL}/documents`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ content }),
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.innerHTML = `<div class="status success">✓ Document added successfully! ID: ${data.id}</div>`;
+                    document.getElementById('documentContent').value = '';
+                    loadDocuments();
+                } else {
+                    statusDiv.innerHTML = `<div class="status error">✗ Error: ${data.detail}</div>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">✗ Network error: ${error.message}</div>`;
+            } finally {
+                button.disabled = false;
+            }
+        });
+
+        // Query Form
+        document.getElementById('queryForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const statusDiv = document.getElementById('queryStatus');
+            const responseArea = document.getElementById('responseArea');
+            const query = document.getElementById('queryText').value;
+            const topK = parseInt(document.getElementById('topK').value);
+            const button = e.target.querySelector('button');
+            
+            button.disabled = true;
+            statusDiv.innerHTML = '<div class="status info">Searching...</div>';
+            responseArea.innerHTML = '<div class="loading"><div class="spinner"></div><p>Processing your query...</p></div>';
+
+            try {
+                const response = await fetch(`${API_URL}/query`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ query, top_k: topK }),
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.innerHTML = `<div class="status success">✓ Found ${data.results.length} relevant documents</div>`;
+                    
+                    let resultsHtml = `Query: ${data.query}\n\n`;
+                    resultsHtml += `Found Documents:\n`;
+                    resultsHtml += `${'='.repeat(50)}\n\n`;
+                    
+                    data.results.forEach((result, index) => {
+                        resultsHtml += `[${index + 1}] Document ID: ${result.id} (Similarity: ${(result.similarity * 100).toFixed(1)}%)\n`;
+                        resultsHtml += `${result.content}\n\n`;
+                    });
+                    
+                    resultsHtml += `${'='.repeat(50)}\n\n`;
+                    resultsHtml += `Response:\n${data.response}`;
+                    
+                    responseArea.textContent = resultsHtml;
+                } else {
+                    statusDiv.innerHTML = `<div class="status error">✗ Error: ${data.detail}</div>`;
+                    responseArea.textContent = 'Error processing query.';
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">✗ Network error: ${error.message}</div>`;
+                responseArea.textContent = `Network error: ${error.message}`;
+            } finally {
+                button.disabled = false;
+            }
+        });
+
+        // Load Documents
+        async function loadDocuments() {
+            const listDiv = document.getElementById('documentsList');
+            listDiv.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+            try {
+                const response = await fetch(`${API_URL}/documents`);
+                const data = await response.json();
+
+                if (data.documents.length === 0) {
+                    listDiv.innerHTML = '<p style="color: #999; text-align: center;">No documents yet. Add some documents to get started!</p>';
+                } else {
+                    listDiv.innerHTML = data.documents.map(doc => `
+                        <div class="document-item">
+                            <strong>ID ${doc.id}:</strong> ${doc.content.substring(0, 150)}${doc.content.length > 150 ? '...' : ''}
+                            <br><small style="color: #999;">Added: ${new Date(doc.created_at).toLocaleString()}</small>
+                        </div>
+                    `).join('');
+                }
+            } catch (error) {
+                listDiv.innerHTML = `<div class="status error">Error loading documents: ${error.message}</div>`;
+            }
+        }
+
+        // Auto-refresh health status every 30 seconds
+        setInterval(checkHealth, 30000);
+    </script>
+</body>
+</html>
