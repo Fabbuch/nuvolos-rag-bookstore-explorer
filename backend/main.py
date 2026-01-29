@@ -61,10 +61,11 @@ def init_db():
         """)
         
         # Create index for vector similarity search
+        # Using HNSW index for better performance with small datasets
+        # Note: For very small datasets (<1000 rows), sequential scan might be faster
         cur.execute("""
             CREATE INDEX IF NOT EXISTS documents_embedding_idx 
-            ON documents USING ivfflat (embedding vector_cosine_ops)
-            WITH (lists = 100);
+            ON documents USING hnsw (embedding vector_cosine_ops);
         """)
         
         conn.commit()
