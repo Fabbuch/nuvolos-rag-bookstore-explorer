@@ -19,7 +19,36 @@ This application consists of three main components:
 
 ## Quick Start
 
-### Using Docker Compose (Recommended)
+### Using Setup Script (Easiest)
+
+The easiest way to get started is using the provided setup script:
+
+```bash
+cd nuvolos-examples-rag
+./setup.sh
+```
+
+This will:
+1. Check database connectivity
+2. Load sample documents if the database is empty
+3. Start both backend and frontend servers
+
+Access the application:
+- Frontend UI: http://localhost:3000
+- Backend API: http://localhost:8000
+- API Documentation: http://localhost:8000/docs
+
+To stop and clean up:
+```bash
+./cleanup.sh
+```
+
+This will:
+1. Stop all running servers
+2. Remove all documents from the database
+3. Clean up temporary files
+
+### Using Docker Compose (Alternative)
 
 1. Make sure you have Docker and Docker Compose installed
 

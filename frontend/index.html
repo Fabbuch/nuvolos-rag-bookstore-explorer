@@ -263,9 +263,9 @@
 
     <script>
         // Backend API URL
-        // NOTE: For production deployment, make this configurable via environment variable
-        // or use relative URLs if frontend and backend are served from the same domain
-        const API_URL = 'http://localhost:8000';
+        // Use same origin - the frontend server proxies to the backend
+        const API_URL = '';
+        console.log('Backend API URL: same origin (proxied)');
 
         // Check health on load
         window.addEventListener('load', () => {
@@ -276,11 +276,15 @@
         async function checkHealth() {
             const statusDiv = document.getElementById('healthStatus');
             try {
+                console.log('Checking health at:', `${API_URL}/health`);
                 const response = await fetch(`${API_URL}/health`);
+                console.log('Health response status:', response.status);
                 const data = await response.json();
+                console.log('Health response data:', data);
                 statusDiv.innerHTML = `<div class="status success">✓ Backend: ${data.status} | Database: ${data.database}</div>`;
             } catch (error) {
-                statusDiv.innerHTML = `<div class="status error">✗ Backend is not responding. Make sure the backend server is running on port 8000.</div>`;
+                console.error('Health check failed:', error);
+                statusDiv.innerHTML = `<div class="status error">✗ Backend is not responding. Error: ${error.message}</div>`;
             }
         }
 
