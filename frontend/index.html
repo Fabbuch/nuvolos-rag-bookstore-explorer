@@ -382,8 +382,18 @@
             listDiv.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
 
             try {
+                console.log('Loading documents from:', `${API_URL}/documents`);
                 const response = await fetch(`${API_URL}/documents`);
-                const data = await response.json();
+                console.log('Documents response status:', response.status);
+                console.log('Documents response content-type:', response.headers.get('content-type'));
+                
+                // Get the raw text first to see what we're actually receiving
+                const text = await response.text();
+                console.log('Documents response text (first 200 chars):', text.substring(0, 200));
+                
+                // Parse the JSON
+                const data = JSON.parse(text);
+                console.log('Parsed documents data:', data);
 
                 if (data.documents.length === 0) {
                     listDiv.innerHTML = '<p style="color: #999; text-align: center;">No documents yet. Add some documents to get started!</p>';
@@ -396,7 +406,8 @@
                     `).join('');
                 }
             } catch (error) {
-                listDiv.innerHTML = `<div class="status error">Error loading documents: ${error.message}</div>`;
+                console.error('Error loading documents:', error);
+                listDiv.innerHTML = `<div class="status error">Error loading documents: ${error.message}<br><small>Check browser console for details</small></div>`;
             }
         }
 

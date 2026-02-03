@@ -34,11 +34,30 @@ export DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD
 export BACKEND_HOST BACKEND_PORT
 
 echo -e "${YELLOW}Step 1: Checking database connection...${NC}"
-# Check if database is accessible
-if PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1" > /dev/null 2>&1; then
+# Check if database is accessible using Python
+DB_CHECK_RESULT=$(python3 -c "
+import sys
+try:
+    import psycopg2
+    conn = psycopg2.connect(
+        host='$DB_HOST',
+        port='$DB_PORT',
+        database='$DB_NAME',
+        user='$DB_USER',
+        password='$DB_PASSWORD'
+    )
+    conn.close()
+    print('success')
+except Exception as e:
+    print(f'error: {e}', file=sys.stderr)
+    sys.exit(1)
+" 2>&1)
+
+if echo "$DB_CHECK_RESULT" | grep -q "success"; then
     echo -e "${GREEN}✓ Database connection successful${NC}\n"
 else
     echo -e "${RED}✗ Cannot connect to database${NC}"
+    echo "Error: $DB_CHECK_RESULT"
     echo "Please ensure PostgreSQL is running and accessible at:"
     echo "  Host: $DB_HOST"
     echo "  Port: $DB_PORT"
@@ -48,10 +67,26 @@ else
 fi
 
 echo -e "${YELLOW}Step 2: Checking database status...${NC}"
-# Check if documents table exists and has data
-DOC_COUNT=$(PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c "
-    SELECT COUNT(*) FROM documents WHERE TRUE
-    " 2>/dev/null | tr -d ' ' || echo "0")
+# Check if documents table exists and has data using Python
+DOC_COUNT=$(python3 -c "
+import psycopg2
+try:
+    conn = psycopg2.connect(
+        host='$DB_HOST',
+        port='$DB_PORT',
+        database='$DB_NAME',
+        user='$DB_USER',
+        password='$DB_PASSWORD'
+    )
+    cur = conn.cursor()
+    cur.execute('SELECT COUNT(*) FROM documents')
+    count = cur.fetchone()[0]
+    cur.close()
+    conn.close()
+    print(count)
+except Exception as e:
+    print('0')
+" 2>/dev/null || echo "0")
 
 echo "Current document count: $DOC_COUNT"
 

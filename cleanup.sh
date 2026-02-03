@@ -82,35 +82,45 @@ fi
 echo ""
 echo -e "${YELLOW}Step 2: Restoring database to initial state...${NC}"
 
-# Check if database is accessible
-if PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1" > /dev/null 2>&1; then
-    echo "Database connection successful"
+# Check if database is accessible using Python
+DB_CLEANUP_RESULT=$(python3 -c "
+import psycopg2
+try:
+    conn = psycopg2.connect(
+        host='$DB_HOST',
+        port='$DB_PORT',
+        database='$DB_NAME',
+        user='$DB_USER',
+        password='$DB_PASSWORD'
+    )
+    cur = conn.cursor()
     
     # Get current document count
-    DOC_COUNT=$(PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c "
-        SELECT COUNT(*) FROM documents WHERE TRUE
-        " 2>/dev/null | tr -d ' ' || echo "0")
+    cur.execute('SELECT COUNT(*) FROM documents')
+    count = cur.fetchone()[0]
+    print(f'Current documents in database: {count}')
     
-    echo "Current documents in database: $DOC_COUNT"
-    
-    if [ "$DOC_COUNT" -gt 0 ]; then
+    if count > 0:
         # Delete all documents
-        PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" << EOF
-DELETE FROM documents;
-EOF
-        echo -e "${GREEN}✓ Deleted all documents from database${NC}"
-    else
-        echo "Database is already empty"
-    fi
+        cur.execute('DELETE FROM documents')
+        conn.commit()
+        print('Deleted all documents from database')
+    else:
+        print('Database is already empty')
     
-    # Optionally drop the table and index (uncomment if you want full cleanup)
-    # PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" << EOF
-# DROP TABLE IF EXISTS documents CASCADE;
-# EOF
-    # echo -e "${GREEN}✓ Dropped documents table${NC}"
-    
+    cur.close()
+    conn.close()
+    print('SUCCESS')
+except Exception as e:
+    print(f'ERROR: {e}')
+" 2>&1)
+
+if echo "$DB_CLEANUP_RESULT" | grep -q "SUCCESS"; then
+    echo "$DB_CLEANUP_RESULT" | grep -v "SUCCESS"
+    echo -e "${GREEN}✓ Database cleanup complete${NC}"
 else
     echo -e "${RED}✗ Cannot connect to database${NC}"
+    echo "$DB_CLEANUP_RESULT"
     echo "Database cleanup skipped. Please check database connection."
     echo "  Host: $DB_HOST"
     echo "  Port: $DB_PORT"

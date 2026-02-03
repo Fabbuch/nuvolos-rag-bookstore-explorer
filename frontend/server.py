@@ -25,6 +25,7 @@ class StaticFileHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         """Handle GET requests - serve static files with backend URL injection for HTML."""
         print(f"GET request for: {self.path}")
+<<<<<<< HEAD
         
         # Handle root path
         if self.path == '/':
@@ -55,6 +56,33 @@ class StaticFileHandler(SimpleHTTPRequestHandler):
         else:
             # For non-HTML files, serve normally
             super().do_GET()
+=======
+        print(f"Headers: {dict(self.headers)}")
+        # Check if this is an API endpoint
+        path_without_query = self.path.split('?')[0]
+        if (path_without_query == '/health' or 
+            path_without_query.startswith('/documents') or 
+            path_without_query.startswith('/query')):
+            print(f"Proxying to backend: {path_without_query}")
+            self.proxy_to_backend('GET')
+        else:
+            print(f"Serving static file: {path_without_query}")
+            super().do_GET()
+    
+    def do_POST(self):
+        """Handle POST requests - proxy to backend API."""
+        print(f"POST request for: {self.path}")
+        path_without_query = self.path.split('?')[0]
+        if (path_without_query.startswith('/documents') or 
+            path_without_query.startswith('/query')):
+            self.proxy_to_backend('POST')
+        else:
+            self.send_response(404)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            error_response = json.dumps({'error': 'Not found'})
+            self.wfile.write(error_response.encode())
+>>>>>>> 43e9309 (proxy mods)
 
 
 def run_server(port=3000):
