@@ -10,6 +10,14 @@ This application consists of three main components:
 2. **Backend API Server** (Port 8000) - FastAPI server handling document storage and RAG queries
 3. **PostgreSQL Database** (Port 5432) - Database with pgvector extension for vector similarity search
 
+### Deployment Model
+
+The application uses **explicit hostname routing** with separate servers:
+- Frontend and backend run on different hostnames/ports
+- Frontend makes direct HTTP requests to backend's hostname
+- Backend connects to PostgreSQL via its service hostname
+- CORS is configured on the backend to allow cross-origin requests from the frontend
+
 ## Features
 
 - 📝 Add documents to the knowledge base

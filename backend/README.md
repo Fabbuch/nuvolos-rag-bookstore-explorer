@@ -38,7 +38,9 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 - The API will be available at: http://localhost:8000
 - Interactive docs: http://localhost:8000/docs
 
-## Notes
-- CORS is enabled for all origins for development. Restrict this in production.
-- Ensure your PostgreSQL server is running and accessible with the configured credentials.
+## Architecture Notes
+
+- **CORS**: Configured to allow all origins for development. In production, restrict `allow_origins` to specific frontend domains.
+- **Hostname Routing**: The backend is designed to be accessed directly from the frontend via its hostname (no reverse proxy needed).
+- **Database Connection**: Uses service hostname for PostgreSQL connection, allowing deployment in containerized/cloud environments.
 

@@ -1,6 +1,6 @@
 # Frontend Server
 
-This is a simple HTTP server for serving the frontend static files with built-in backend proxy support.
+This is a simple HTTP server for serving the frontend static files. The frontend makes direct requests to the backend API using its hostname.
 
 ## Requirements
 
@@ -24,24 +24,29 @@ This is a simple HTTP server for serving the frontend static files with built-in
 
 ## Backend Configuration
 
-The frontend server acts as a reverse proxy to the backend API running on `localhost:8000`. This eliminates CORS issues and works seamlessly with dynamic session IDs in cloud environments.
+The frontend server injects the backend URL into the HTML at runtime. Set the backend hostname using environment variables:
 
 **Environment Variables:**
-- `BACKEND_HOST` (default: localhost) - Backend server host
-- `BACKEND_PORT` (default: 8000) - Backend server port
+- `BACKEND_HOST` (default: http://localhost:8000) - Full URL to the backend API server
 
 Example:
 ```bash
-BACKEND_HOST=localhost BACKEND_PORT=8000 python server.py
+BACKEND_HOST=http://backend.example.com python server.py
+```
+
+Or for cloud environments with separate service hostnames:
+```bash
+BACKEND_HOST=http://nv-service-abc123.nuvolos.cloud python server.py
 ```
 
 ## How It Works
 
 - Static files (HTML, JS, CSS) are served directly from the frontend directory
-- API requests (`/health`, `/documents`, `/query`) are automatically proxied to the backend
-- No URL configuration needed - works with changing session IDs in cloud environments
+- The `BACKEND_HOST` environment variable is injected into HTML files at request time
+- Frontend JavaScript makes direct fetch() calls to the backend API
+- CORS headers in the backend allow cross-origin requests from the frontend
 
 ## Notes
 - The server serves files from the current directory (where server.py is located).
-- CORS is enabled for all origins for development. Restrict this in production if needed.
+- The backend URL is dynamically injected, making it easy to configure for different environments.
 - To use a different port, modify the `run_server` call at the end of server.py.

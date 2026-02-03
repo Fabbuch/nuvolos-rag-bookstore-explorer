@@ -1,29 +1,20 @@
 """
-Simple HTTP server for serving the frontend static files with backend proxy support.
+Simple HTTP server for serving the frontend static files.
+The frontend makes direct requests to the backend via its hostname.
 """
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import os
-import urllib.request
-import urllib.error
-import json
 
-# Backend configuration
-BACKEND_HOST = os.getenv('BACKEND_HOST', 'localhost')
-BACKEND_PORT = os.getenv('BACKEND_PORT', '8000')
-BACKEND_URL = f'http://{BACKEND_HOST}:{BACKEND_PORT}'
+# Backend configuration - will be injected into the HTML
+BACKEND_HOST = os.getenv('BACKEND_HOST', 'http://localhost:8000')
+if not BACKEND_HOST.startswith('http'):
+    BACKEND_HOST = f'http://{BACKEND_HOST}'
 
-class CORSRequestHandler(SimpleHTTPRequestHandler):
-    """HTTP request handler with CORS support and backend proxy."""
+class StaticFileHandler(SimpleHTTPRequestHandler):
+    """HTTP request handler for serving static files with backend URL injection."""
     
     def end_headers(self):
-        """
-        Add CORS headers to all responses.
-        WARNING: In production, restrict Access-Control-Allow-Origin to specific domains.
-        This is configured for development/example purposes only.
-        """
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        """Add cache control headers for HTML files."""
         # Disable caching for HTML files to ensure fresh content
         if self.path.endswith('.html') or self.path == '/':
             self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
@@ -31,75 +22,39 @@ class CORSRequestHandler(SimpleHTTPRequestHandler):
             self.send_header('Expires', '0')
         SimpleHTTPRequestHandler.end_headers(self)
     
-    def do_OPTIONS(self):
-        """Handle OPTIONS requests for CORS preflight."""
-        self.send_response(200)
-        self.end_headers()
-    
-    def proxy_to_backend(self, method='GET'):
-        """Proxy requests to the backend API."""
-        print(f"Proxying {method} {self.path} to {BACKEND_URL}{self.path}")
-        try:
-            # Read request body if present
-            content_length = int(self.headers.get('Content-Length', 0))
-            body = self.rfile.read(content_length) if content_length > 0 else None
-            
-            # Build backend URL
-            backend_path = self.path
-            url = f'{BACKEND_URL}{backend_path}'
-            
-            # Create request
-            headers = {'Content-Type': 'application/json'} if body else {}
-            req = urllib.request.Request(url, data=body, headers=headers, method=method)
-            
-            # Make request to backend
-            with urllib.request.urlopen(req, timeout=30) as response:
-                response_body = response.read()
-                
-                # Send response back to client
-                self.send_response(response.status)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(response_body)
-                print(f"Successfully proxied to backend: {response.status}")
-                
-        except urllib.error.HTTPError as e:
-            # Forward HTTP errors from backend
-            print(f"Backend HTTP error: {e.code}")
-            self.send_response(e.code)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(e.read())
-        except Exception as e:
-            # Handle connection errors
-            print(f"Proxy error: {e}")
-            self.send_response(503)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            error_response = json.dumps({'error': f'Backend connection failed: {str(e)}'})
-            self.wfile.write(error_response.encode())
-    
     def do_GET(self):
-        """Handle GET requests - proxy API calls, serve static files otherwise."""
+        """Handle GET requests - serve static files with backend URL injection for HTML."""
         print(f"GET request for: {self.path}")
-        # Check if this is an API endpoint
-        path_without_query = self.path.split('?')[0]
-        if (path_without_query == '/health' or 
-            path_without_query.startswith('/documents') or 
-            path_without_query.startswith('/query')):
-            self.proxy_to_backend('GET')
+        
+        # Handle root path
+        if self.path == '/':
+            self.path = '/index.html'
+        
+        # For HTML files, inject the backend URL
+        if self.path.endswith('.html'):
+            try:
+                file_path = self.path.lstrip('/')
+                if os.path.exists(file_path):
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    
+                    # Inject backend hostname into the HTML
+                    content = content.replace('%BACKEND_HOST%', BACKEND_HOST)
+                    
+                    # Send response
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/html; charset=utf-8')
+                    self.send_header('Content-Length', len(content.encode('utf-8')))
+                    self.end_headers()
+                    self.wfile.write(content.encode('utf-8'))
+                else:
+                    self.send_error(404, "File not found")
+            except Exception as e:
+                print(f"Error serving HTML file: {e}")
+                self.send_error(500, str(e))
         else:
+            # For non-HTML files, serve normally
             super().do_GET()
-    
-    def do_POST(self):
-        """Handle POST requests - proxy to backend API."""
-        print(f"POST request for: {self.path}")
-        path_without_query = self.path.split('?')[0]
-        if (path_without_query.startswith('/documents') or 
-            path_without_query.startswith('/query')):
-            self.proxy_to_backend('POST')
-        else:
-            self.send_error(404, "Not Found")
 
 
 def run_server(port=3000):
@@ -108,9 +63,10 @@ def run_server(port=3000):
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     
     server_address = ('', port)
-    httpd = HTTPServer(server_address, CORSRequestHandler)
+    httpd = HTTPServer(server_address, StaticFileHandler)
     
     print(f"Frontend server running on http://localhost:{port}")
+    print(f"Backend URL: {BACKEND_HOST}")
     print(f"Serving files from: {os.getcwd()}")
     print("Press Ctrl+C to stop the server")
     

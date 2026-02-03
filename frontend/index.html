@@ -262,10 +262,11 @@
     </div>
 
     <script>
-        // Backend API URL
-        // Use same origin - the frontend server proxies to the backend
-        const API_URL = '';
-        console.log('Backend API URL: same origin (proxied)');
+        // Backend API URL - configured via environment variable or default
+        // This assumes the backend is accessible at a separate hostname
+        const BACKEND_HOST = '%BACKEND_HOST%';  // Will be replaced by server.py
+        const API_URL = BACKEND_HOST;
+        console.log('Backend API URL:', API_URL);
 
         // Check health on load
         window.addEventListener('load', () => {
