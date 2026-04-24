@@ -1,52 +1,43 @@
 # Frontend Server
 
-This is a simple HTTP server for serving the frontend static files. The frontend makes direct requests to the backend API using its hostname.
+A Python HTTP server that does two things:
 
-## Requirements
+1. **Serves static files** (`index.html`) to the browser.
+2. **Reverse-proxies API requests** to the backend over the Nuvolos internal network.
 
-- Python 3.7+
+## Why a reverse proxy?
 
-## Running the Frontend
+The backend runs on an internal hostname that only Nuvolos pods can reach.
+The browser (on the public internet) can't resolve that hostname, so this
+server accepts the browser's request and forwards it to the backend.
 
-1. Open a terminal and navigate to this directory:
-   ```bash
-   cd frontend
-   ```
-2. Start the server:
-   ```bash
-   python server.py
-   ```
-   By default, the server runs on port 3000.
-
-3. Open your browser and go to:
-   - http://localhost:3000 (local development)
-   - Or use your cloud provider's URL (e.g., Nuvolos application URL)
-
-## Backend Configuration
-
-The frontend server injects the backend URL into the HTML at runtime. Set the backend hostname using environment variables:
-
-**Environment Variables:**
-- `BACKEND_HOST` (default: http://localhost:8000) - Full URL to the backend API server
-
-Example:
-```bash
-BACKEND_HOST=http://backend.example.com python server.py
+```
+Browser ──► Nuvolos VS Code proxy ──► this server (:3000) ──► backend (:8500)
+                                        serves HTML             internal only
+                                        proxies /documents,
+                                        /query, /health
 ```
 
-Or for cloud environments with separate service hostnames:
+## Running
+
 ```bash
-BACKEND_HOST=http://nv-service-abc123.nuvolos.cloud python server.py
+python server.py
+# or
+python start_frontend.py   # daemonizes, saves PID for stop_frontend.py
 ```
 
-## How It Works
+## Configuration
 
-- Static files (HTML, JS, CSS) are served directly from the frontend directory
-- The `BACKEND_HOST` environment variable is injected into HTML files at request time
-- Frontend JavaScript makes direct fetch() calls to the backend API
-- CORS headers in the backend allow cross-origin requests from the frontend
+| Env var        | Default                           | Purpose                          |
+|---------------|-----------------------------------|----------------------------------|
+| `BACKEND_HOST`| `http://<your_hostname>:8500`     | Internal URL of the backend pod  |
 
-## Notes
-- The server serves files from the current directory (where server.py is located).
-- The backend URL is dynamically injected, making it easy to configure for different environments.
-- To use a different port, modify the `run_server` call at the end of server.py.
+## Proxied API paths
+
+| Path          | Method(s)    | Forwarded to backend |
+|--------------|-------------|----------------------|
+| `/health`    | GET         | Yes                  |
+| `/documents` | GET, POST   | Yes                  |
+| `/query`     | POST        | Yes                  |
+
+Everything else is served as a static file from this directory.

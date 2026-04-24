@@ -33,7 +33,7 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "nuvolos")
 
 # Backend configuration
 BACKEND_HOST = os.getenv("BACKEND_HOST", "localhost")
-BACKEND_PORT = os.getenv("BACKEND_PORT", "8000")
+BACKEND_PORT = os.getenv("BACKEND_PORT", "8500")
 
 # Frontend configuration
 FRONTEND_PORT = os.getenv("FRONTEND_PORT", "3000")

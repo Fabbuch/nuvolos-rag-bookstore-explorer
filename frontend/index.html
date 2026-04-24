@@ -262,11 +262,17 @@
     </div>
 
     <script>
-        // Backend API URL - configured via environment variable or default
-        // This assumes the backend is accessible at a separate hostname
-        const BACKEND_HOST = '%BACKEND_HOST%';  // Will be replaced by server.py
-        const API_URL = BACKEND_HOST;
-        console.log('Backend API URL:', API_URL);
+        // Detect the base URL - handle VS Code Server proxy paths
+        // VS Code Server may serve from a path like /proxy/<port>/ or similar
+        const currentPath = window.location.pathname;
+        const basePath = currentPath.endsWith('/') ? currentPath.slice(0, -1) : 
+                        currentPath.includes('.html') ? currentPath.substring(0, currentPath.lastIndexOf('/')) : 
+                        currentPath;
+        
+        // Use the current origin + detected base path
+        const API_URL = window.location.origin + (basePath === '' ? '' : basePath);
+        
+
 
         // Check health on load
         window.addEventListener('load', () => {
@@ -277,11 +283,8 @@
         async function checkHealth() {
             const statusDiv = document.getElementById('healthStatus');
             try {
-                console.log('Checking health at:', `${API_URL}/health`);
                 const response = await fetch(`${API_URL}/health`);
-                console.log('Health response status:', response.status);
                 const data = await response.json();
-                console.log('Health response data:', data);
                 statusDiv.innerHTML = `<div class="status success">✓ Backend: ${data.status} | Database: ${data.database}</div>`;
             } catch (error) {
                 console.error('Health check failed:', error);
@@ -382,18 +385,8 @@
             listDiv.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
 
             try {
-                console.log('Loading documents from:', `${API_URL}/documents`);
                 const response = await fetch(`${API_URL}/documents`);
-                console.log('Documents response status:', response.status);
-                console.log('Documents response content-type:', response.headers.get('content-type'));
-                
-                // Get the raw text first to see what we're actually receiving
-                const text = await response.text();
-                console.log('Documents response text (first 200 chars):', text.substring(0, 200));
-                
-                // Parse the JSON
-                const data = JSON.parse(text);
-                console.log('Parsed documents data:', data);
+                const data = await response.json();
 
                 if (data.documents.length === 0) {
                     listDiv.innerHTML = '<p style="color: #999; text-align: center;">No documents yet. Add some documents to get started!</p>';

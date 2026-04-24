@@ -24,7 +24,7 @@ DB_PASSWORD="${DB_PASSWORD:-nuvolos}"
 
 # Backend configuration
 BACKEND_HOST="${BACKEND_HOST:-localhost}"
-BACKEND_PORT="${BACKEND_PORT:-8000}"
+BACKEND_PORT="${BACKEND_PORT:-8500}"
 
 # Frontend configuration
 FRONTEND_PORT="${FRONTEND_PORT:-3000}"

@@ -1,46 +1,46 @@
 # RAG Backend API
 
-This is an ultra-minimal Retrieval-Augmented Generation (RAG) backend server with pgvector integration, built using FastAPI and PostgreSQL.
+A FastAPI server that stores documents in PostgreSQL (with pgvector) and
+exposes endpoints for adding, listing, and querying documents via vector
+similarity search.
 
-## Requirements
-
-- Python 3.8+
-- PostgreSQL server with pgvector extension
-
-## Installation
-
-1. **Install dependencies:**
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. **Configure database connection:**
-
-   The backend uses the following environment variables (with defaults):
-
-   - `DB_HOST` (default: nv-service-d54c9117d23473fa7f28948da0635011)
-   - `DB_PORT` (default: 5432)
-   - `DB_NAME` (default: nuvolos)
-   - `DB_USER` (default: nuvolos)
-   - `DB_PASSWORD` (default: nuvolos)
-
-   You can set these in your shell or a `.env` file.
-
-## Running the Backend
-
-Start the FastAPI server using Uvicorn:
+## Running
 
 ```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+pip install -r requirements.txt
+python main.py                   # starts on port 8500
+# or
+python start_backend.py          # daemonizes, saves PID for stop_backend.py
 ```
 
-- The API will be available at: http://localhost:8000
-- Interactive docs: http://localhost:8000/docs
+Interactive docs: http://localhost:8500/docs
 
-## Architecture Notes
+## Configuration
 
-- **CORS**: Configured to allow all origins for development. In production, restrict `allow_origins` to specific frontend domains.
-- **Hostname Routing**: The backend is designed to be accessed directly from the frontend via its hostname (no reverse proxy needed).
-- **Database Connection**: Uses service hostname for PostgreSQL connection, allowing deployment in containerized/cloud environments.
+All settings come from environment variables (with sensible defaults):
+
+| Env var       | Default                                        | Purpose              |
+|--------------|------------------------------------------------|----------------------|
+| `DB_HOST`    | `nv-service-d54c9117d23473fa7f28948da0635011`  | PostgreSQL hostname  |
+| `DB_PORT`    | `5432`                                         | PostgreSQL port      |
+| `DB_NAME`    | `nuvolos`                                      | Database name        |
+| `DB_USER`    | `nuvolos`                                      | Database user        |
+| `DB_PASSWORD`| `nuvolos`                                      | Database password    |
+
+The default `DB_HOST` is a Nuvolos-assigned internal hostname. On the Nuvolos
+internal network every pod gets a hostname like `nv-service-<hash>`, which
+other pods on the same subnet can resolve — but nothing outside can.
+
+## Network position
+
+This backend is **not** exposed to the internet. The frontend server
+reverse-proxies API requests to it over the Nuvolos internal network:
+
+```
+Browser ──► Frontend (port 3000) ──► this backend (port 8500) ──► PostgreSQL
+            public-facing              internal only                internal only
+```
+
+CORS is set to `allow_origins=["*"]` because the frontend proxy makes the
+requests server-side, not from a browser origin.
 

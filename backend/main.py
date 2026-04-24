@@ -12,18 +12,20 @@ import json
 
 app = FastAPI(title="RAG Backend API")
 
-# Enable CORS for frontend
-# WARNING: In production, restrict allow_origins to specific domains
-# For development/example purposes, allowing all origins
+# Enable CORS for the frontend reverse proxy.
+# The frontend server (not the browser) makes requests to this backend,
+# so "*" is acceptable here — no browser ever talks to this host directly.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: Restrict to specific origins in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Database configuration
+# Database connection.
+# DB_HOST is the internal hostname Nuvolos assigns to the PostgreSQL pod.
+# It is only reachable from other pods on the same Nuvolos-managed subnet.
 DB_HOST = os.getenv("DB_HOST", "nv-service-d54c9117d23473fa7f28948da0635011")
 DB_PORT = os.getenv("DB_PORT", "5432")
 DB_NAME = os.getenv("DB_NAME", "nuvolos")
@@ -285,4 +287,5 @@ def generate_simple_answer(query: str, results: List[Dict]) -> str:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("BACKEND_PORT", "8500"))
+    uvicorn.run(app, host="0.0.0.0", port=port)
