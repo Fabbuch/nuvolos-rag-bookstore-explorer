@@ -10,6 +10,8 @@ from psycopg2.extras import RealDictCursor
 from typing import List, Dict
 import json
 
+from language_model import load_model, load_tokenizer, RAGSystem
+
 app = FastAPI(title="RAG Backend API")
 
 # Enable CORS for the frontend reverse proxy.
@@ -32,6 +34,13 @@ DB_NAME = os.getenv("DB_NAME", "nuvolos")
 DB_USER = os.getenv("DB_USER", "nuvolos")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "nuvolos")
 
+# Load a Qwen model and tokenizer for generation.
+QWEN_MODEL = load_model("ckpt-full")
+QWEN_TOKENIZER = load_tokenizer("Qwen/Qwen1.5-0.5B")
+RAG_SYSTEM = RAGSystem(
+    QWEN_MODEL, 
+    QWEN_TOKENIZER
+    )
 
 def get_db_connection():
     """Create a database connection."""
@@ -107,12 +116,9 @@ class Query(BaseModel):
         if v < 1 or v > 100:
             raise ValueError('top_k must be between 1 and 100')
         return v
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database on startup."""
-    init_db()
+    
+class DocumentList(BaseModel):
+    documents: List[Document]
 
 
 @app.get("/")
@@ -232,7 +238,12 @@ async def query_documents(query: Query):
         if conn:
             conn.close()
         raise HTTPException(status_code=500, detail=f"Error querying documents: {str(e)}")
-
+    
+@app.post("/generate")
+async def generate(query: Query, documents: DocumentList):
+    documents_strs = [doc.content for doc in documents.documents]
+    response = RAG_SYSTEM.generate(query.query, documents_strs)
+    return {"query": query.query, "response": response}
 
 def create_simple_embedding(text: str) -> str:
     """
