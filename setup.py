@@ -294,14 +294,6 @@ def main():
     doc_count = get_document_count()
     print(f"Current document count: {doc_count}")
     
-    # Step 3-5: Load sample data if needed
-    if doc_count == 0:
-        print_colored(YELLOW, "Database is empty. Loading sample data...\n")
-        if not load_sample_data():
-            sys.exit(1)
-    else:
-        print_success(f"Database already contains {doc_count} documents\n")
-    
     # Step 6: Start servers
     if not start_servers():
         sys.exit(1)

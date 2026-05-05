@@ -99,47 +99,6 @@ def stop_process(pid_file, process_name):
     else:
         print(f"No {process_name} PID file found")
 
-
-def cleanup_database():
-    """Clean up database by removing all documents."""
-    print_header("Step 2: Restoring database to initial state...")
-    
-    try:
-        conn = psycopg2.connect(
-            host=DB_HOST,
-            port=DB_PORT,
-            database=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD
-        )
-        cur = conn.cursor()
-        
-        # Get current document count
-        cur.execute("SELECT COUNT(*) FROM documents")
-        count = cur.fetchone()[0]
-        print(f"Current documents in database: {count}")
-        
-        if count > 0:
-            # Delete all documents
-            cur.execute("DELETE FROM documents")
-            conn.commit()
-            print_success("Deleted all documents from database")
-        else:
-            print("Database is already empty")
-        
-        cur.close()
-        conn.close()
-        
-    except Exception as e:
-        print_error("Cannot connect to database")
-        print(f"Error: {e}")
-        print("Database cleanup skipped. Please check database connection.")
-        print(f"  Host: {DB_HOST}")
-        print(f"  Port: {DB_PORT}")
-        print(f"  Database: {DB_NAME}")
-        print(f"  User: {DB_USER}")
-
-
 def cleanup_files():
     """Clean up temporary files."""
     print_header("Step 3: Cleaning up temporary files...")
@@ -161,15 +120,12 @@ def main():
     stop_process(BACKEND_PID_FILE, "backend server")
     stop_process(FRONTEND_PID_FILE, "frontend server")
     
-    # Step 2: Clean database
-    cleanup_database()
-    
     # Step 3: Clean up files
     cleanup_files()
     
     # Success message
     print_colored(GREEN, "\n=== Cleanup Complete! ===\n")
-    print("All servers stopped and database restored to initial state.")
+    print("All servers stopped and log files cleaned up.")
     print("To start the application again, run: python3 setup.py")
 
 
