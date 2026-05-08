@@ -10,7 +10,7 @@ from psycopg2.extras import RealDictCursor
 from typing import List, Dict
 import json
 
-from language_model import load_model, load_tokenizer, RAGSystem
+from language_model import load_model, load_tokenizer, RAGSystem, sentence_transformers_embedding
 
 app = FastAPI(title="RAG Backend API")
 
@@ -41,6 +41,10 @@ RAG_SYSTEM = RAGSystem(
     QWEN_MODEL, 
     QWEN_TOKENIZER
     )
+
+# Load an embedding model for creating vector embeddings.
+EMB_MODEL = load_model("sentence-transformers/all-MiniLM-L6-v2")
+EMB_TOKENIZER = load_tokenizer("sentence-transformers/all-MiniLM-L6-v2")
 
 def get_db_connection():
     """Create a database connection."""
@@ -149,9 +153,7 @@ async def add_document(document: Document):
     """Add a document to the database with a simple embedding."""
     conn = None
     try:
-        # Create a simple embedding (bag of words representation)
-        # In a real application, you would use a proper embedding model
-        embedding = create_simple_embedding(document.content)
+        embedding = get_embedding(document.content)
         
         conn = get_db_connection()
         cur = conn.cursor()
@@ -200,7 +202,7 @@ async def query_documents(query: Query):
     conn = None
     try:
         # Create embedding for the query
-        query_embedding = create_simple_embedding(query.query)
+        query_embedding = get_embedding(query.query)
         
         conn = get_db_connection()
         cur = conn.cursor()
@@ -245,55 +247,10 @@ async def generate(query: Query, documents: DocumentList):
     response = RAG_SYSTEM.generate(query.query, documents_strs)
     return {"query": query.query, "response": response}
 
-def create_simple_embedding(text: str) -> str:
-    """
-    Create a simple embedding vector from text.
-    This is a placeholder for demonstration. In production, use a proper embedding model.
-    
-    Note: This function only processes the first 384 characters for position-based features.
-    For longer texts, most content is ignored. In production, use a proper embedding model
-    that can handle arbitrary length text (e.g., sentence-transformers, OpenAI embeddings).
-    """
-    # Simple character frequency based embedding (384 dimensions)
-    embedding = [0.0] * 384
-    
-    # Normalize text
-    text = text.lower()
-    
-    # Use character codes and position to create a simple embedding
-    for i, char in enumerate(text[:384]):
-        embedding[i] = (ord(char) % 256) / 256.0
-    
-    # Add some word-based features with deterministic hashing
-    words = text.split()
-    for i, word in enumerate(words[:192]):
-        # Use a deterministic hash by encoding to bytes
-        idx = (hash(word.encode('utf-8')) % 192) + 192
-        embedding[idx] = min(embedding[idx] + 0.1, 1.0)
-    
+def get_embedding(text: str) -> str:
+    """Create a sentence transformer embedding for the text."""
+    embedding = sentence_transformers_embedding(EMB_MODEL, EMB_TOKENIZER, text)
     return "[" + ",".join(map(str, embedding)) + "]"
-
-
-def generate_simple_answer(query: str, results: List[Dict]) -> str:
-    """
-    Generate a simple answer based on the query and retrieved documents.
-    This is a placeholder for demonstration. In production, use an LLM.
-    """
-    if not results:
-        return "I don't have enough information to answer this question."
-    
-    # Extract key terms from query
-    query_words = set(query.lower().split())
-    
-    # Find the most relevant document
-    best_match = results[0]
-    content = best_match['content']
-    
-    # Only add ellipsis if content is actually truncated
-    if len(content) > 200:
-        return f"Based on the documents, here's what I found: {content[:200]}..."
-    else:
-        return f"Based on the documents, here's what I found: {content}"
 
 
 if __name__ == "__main__":

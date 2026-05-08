@@ -120,3 +120,6 @@ class RAGSystem:
         answer = self.tokenizer.decode(output_ids)
         
         return answer
+
+def sentence_transformers_embedding(model, tokenizer, text: str) -> list[float]:
+    return model.encode(text)[0].tolist()
