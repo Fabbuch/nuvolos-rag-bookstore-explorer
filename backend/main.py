@@ -11,6 +11,7 @@ from typing import List, Dict
 import json
 
 from language_model import load_model, load_tokenizer, RAGSystem, sentence_transformers_embedding
+from vllm import LLM, SamplingParams
 
 app = FastAPI(title="RAG Backend API")
 
@@ -34,19 +35,14 @@ DB_NAME = os.getenv("DB_NAME", "nuvolos")
 DB_USER = os.getenv("DB_USER", "nuvolos")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "nuvolos")
 
-### TODO: Implement the model inference with vllm ###
-# Load a Qwen model and tokenizer for generation.
-QWEN_MODEL = load_model("ckpt-full")
-QWEN_TOKENIZER = load_tokenizer("Qwen/Qwen1.5-0.5B")
-RAG_SYSTEM = RAGSystem(
-    QWEN_MODEL, 
-    QWEN_TOKENIZER
-    )
+# Environment variables for vllm and huggingface cache directories.
+VLLM_CACHE_ROOT=os.getenv("VLLM_CACHE_ROOT", "space_mounts/pars/vllm_cache")
+DOWNLOAD_DIR=os.getenv("DOWNLOAD_DIR", "space_mounts/pars/hf_cache")
 
-# Load an embedding model for creating vector embeddings.
-EMB_MODEL = load_model("sentence-transformers/all-MiniLM-L6-v2")
-EMB_TOKENIZER = load_tokenizer("sentence-transformers/all-MiniLM-L6-v2")
-### TODO ###
+# Embedding model configuration.
+# TODO: Update find a vllm alternative to his if possible.
+EMB_MODEL = load_model("sentence-transformers/all-MiniLM-L6-v2", download_dir=DOWNLOAD_DIR)
+EMB_TOKENIZER = load_tokenizer(EMB_MODEL)
 
 def get_db_connection():
     """Create a database connection."""
@@ -194,53 +190,41 @@ async def list_documents():
 @app.post("/query")
 async def query_documents(query: Query):
     """Query documents using vector similarity search."""
-    conn = None
-    try:
-        # Create embedding for the query
-        query_embedding = get_embedding(query.query)
-        
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
-        # Find similar documents using cosine similarity
-        cur.execute(
-            """
-            SELECT id, content, 
-                   1 - (embedding <=> %s::vector) as similarity
-            FROM documents
-            WHERE embedding IS NOT NULL
-            ORDER BY embedding <=> %s::vector
-            LIMIT %s;
-            """,
-            (query_embedding, query_embedding, query.top_k)
-        )
-        results = cur.fetchall()
-        
-        cur.close()
-        conn.close()
-        
-        # Generate a simple RAG response
-        if results:
-            context = "\n\n".join([f"Document {r['id']}: {r['content']}" for r in results])
-            response = f"Based on the retrieved documents:\n\n{context}\n\nAnswer: {generate_simple_answer(query.query, results)}"
-        else:
-            response = "No relevant documents found in the database."
-        
-        return {
-            "query": query.query,
-            "results": results,
-            "response": response
-        }
-    except Exception as e:
-        if conn:
-            conn.close()
-        raise HTTPException(status_code=500, detail=f"Error querying documents: {str(e)}")
+    # TODO: Implement this.
     
 @app.post("/generate")
 async def generate(query: Query, documents: DocumentList):
+    """Generate an LLM response from a query and a list of retrieved documents."""
+    # Get document contents as a list of strings
     documents_strs = [doc.content for doc in documents.documents]
-    response = RAG_SYSTEM.generate(query.query, documents_strs)
-    return {"query": query.query, "documents": documents.documents, "response": response}
+    
+    # Further sampling parameters such as temperature, top_p etc. can be added here.
+    sampling_params=SamplingParams(
+        max_tokens=512,
+        )
+    
+    # Generate a response with the LLM using a prompt that incorporates the user question and the retrieved documents
+    # like this:
+    # Question: <question>
+    # Documents:
+    # <document 1>
+    # 
+    # <document 2>
+    # 
+    # <document 3>
+    # ...
+    
+    response = QWEN_MODEL.chat([
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": f"Question: {query.query}\nDocuments:\n" + "\n\n".join(documents_strs)}
+    ], sampling_params=sampling_params)
+    
+    return {
+        "query": query.query,
+        "documents": documents.documents,
+        "prompt": response[0].prompt,
+        "output": response[0].outputs[0].text,
+        }
 
 def get_embedding(text: str) -> str:
     """Create a sentence transformer embedding for the text."""
@@ -249,6 +233,14 @@ def get_embedding(text: str) -> str:
 
 
 if __name__ == "__main__":
+    QWEN_MODEL = LLM(
+        model="Qwen/Qwen1.5-0.5B-Chat",
+        download_dir=DOWNLOAD_DIR,
+        )
+    
+    SYSTEM_PROMPT = \
+        "You are a helpful assistant for answering questions about books. Use the provided documents to answer the question as best as you can. If you don't know the answer, say you don't know."
+    
     import uvicorn
     port = int(os.getenv("BACKEND_PORT", "8500"))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="localhost", port=port)
