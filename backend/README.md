@@ -15,6 +15,34 @@ python start_backend.py          # daemonizes, saves PID for stop_backend.py
 
 Interactive docs: http://localhost:8500/docs
 
+## Summary of Endpoints
+
+| Method | Path         | Description              |
+|--------|-------------|--------------------------|
+| GET    | `/`         | Root / status            |
+| POST   | `/generate` | Generate response based on a query and a set of documents |
+| GET    | `/health`   | Health check (DB ping)   |
+| POST   | `/documents`| Add a document           |
+| GET    | `/documents`| List all documents       |
+| POST   | `/query`    | Vector-similarity search |
+
+### Example Usage
+
+- `/generate`:
+```bash
+curl -X POST http://localhost:8500/generate \
+  -H "Content-Type: application/json" \
+  -d '{"query": 
+        {"query": "What is a good romance book set in france?"},
+        "documents": {
+            "documents": [{
+                "content": "This is a book about...."}
+                },
+                "content": "Review: this book is 9/10..."}
+                }]
+            }'
+```
+
 ## Configuration
 
 All settings come from environment variables (with sensible defaults):

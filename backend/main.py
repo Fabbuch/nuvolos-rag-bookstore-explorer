@@ -34,6 +34,7 @@ DB_NAME = os.getenv("DB_NAME", "nuvolos")
 DB_USER = os.getenv("DB_USER", "nuvolos")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "nuvolos")
 
+### TODO: Implement the model inference with vllm ###
 # Load a Qwen model and tokenizer for generation.
 QWEN_MODEL = load_model("ckpt-full")
 QWEN_TOKENIZER = load_tokenizer("Qwen/Qwen1.5-0.5B")
@@ -45,6 +46,7 @@ RAG_SYSTEM = RAGSystem(
 # Load an embedding model for creating vector embeddings.
 EMB_MODEL = load_model("sentence-transformers/all-MiniLM-L6-v2")
 EMB_TOKENIZER = load_tokenizer("sentence-transformers/all-MiniLM-L6-v2")
+### TODO ###
 
 def get_db_connection():
     """Create a database connection."""
@@ -93,6 +95,7 @@ def init_db():
         print(f"Database initialization error: {e}")
 
 
+### Pydantic model definitions for request validation.
 class Document(BaseModel):
     content: str
     
@@ -107,7 +110,6 @@ class Document(BaseModel):
 
 class Query(BaseModel):
     query: str
-    top_k: int = 3
     
     @validator('query')
     def validate_query(cls, v):
@@ -115,15 +117,8 @@ class Query(BaseModel):
             raise ValueError('Query cannot be empty')
         return v
     
-    @validator('top_k')
-    def validate_top_k(cls, v):
-        if v < 1 or v > 100:
-            raise ValueError('top_k must be between 1 and 100')
-        return v
-    
 class DocumentList(BaseModel):
     documents: List[Document]
-
 
 @app.get("/")
 async def root():
@@ -245,7 +240,7 @@ async def query_documents(query: Query):
 async def generate(query: Query, documents: DocumentList):
     documents_strs = [doc.content for doc in documents.documents]
     response = RAG_SYSTEM.generate(query.query, documents_strs)
-    return {"query": query.query, "response": response}
+    return {"query": query.query, "documents": documents.documents, "response": response}
 
 def get_embedding(text: str) -> str:
     """Create a sentence transformer embedding for the text."""
