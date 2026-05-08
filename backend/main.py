@@ -10,8 +10,8 @@ from psycopg2.extras import RealDictCursor
 from typing import List, Dict
 import json
 
-from language_model import load_model, load_tokenizer, RAGSystem, sentence_transformers_embedding
-from vllm import LLM, SamplingParams
+from language_model import load_model, load_tokenizer, RAGGenerator, sentence_transformers_embedding
+from vllm import SamplingParams
 
 app = FastAPI(title="RAG Backend API")
 
@@ -40,9 +40,9 @@ VLLM_CACHE_ROOT=os.getenv("VLLM_CACHE_ROOT", "space_mounts/pars/vllm_cache")
 DOWNLOAD_DIR=os.getenv("DOWNLOAD_DIR", "space_mounts/pars/hf_cache")
 
 # Embedding model configuration.
-# TODO: Update find a vllm alternative to his if possible.
-EMB_MODEL = load_model("sentence-transformers/all-MiniLM-L6-v2", download_dir=DOWNLOAD_DIR)
-EMB_TOKENIZER = load_tokenizer(EMB_MODEL)
+# TODO: Find a vllm alternative to this if possible.
+EMB_MODEL = load_model("sentence-transformers/all-MiniLM-L6-v2")
+EMB_TOKENIZER = load_tokenizer("sentence-transformers/all-MiniLM-L6-v2")
 
 def get_db_connection():
     """Create a database connection."""
@@ -204,26 +204,17 @@ async def generate(query: Query, documents: DocumentList):
         )
     
     # Generate a response with the LLM using a prompt that incorporates the user question and the retrieved documents
-    # like this:
-    # Question: <question>
-    # Documents:
-    # <document 1>
-    # 
-    # <document 2>
-    # 
-    # <document 3>
-    # ...
-    
-    response = QWEN_MODEL.chat([
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"Question: {query.query}\nDocuments:\n" + "\n\n".join(documents_strs)}
-    ], sampling_params=sampling_params)
+    response = GENERATOR.generate(
+        history=[],  # No conversation history for now
+        query=query.query,
+        retrieved_docs=documents_strs,
+        sampling_params=sampling_params
+    )
     
     return {
         "query": query.query,
         "documents": documents.documents,
-        "prompt": response[0].prompt,
-        "output": response[0].outputs[0].text,
+        "output": response
         }
 
 def get_embedding(text: str) -> str:
@@ -233,14 +224,16 @@ def get_embedding(text: str) -> str:
 
 
 if __name__ == "__main__":
-    QWEN_MODEL = LLM(
-        model="Qwen/Qwen1.5-0.5B-Chat",
+    # Initialize LLM generator
+    system_prompt = \
+        "You are a helpful assistant for answering questions about books. Use the provided documents to answer the question as best as you can. If you don't know the answer, say you don't know."
+        
+    GENERATOR = RAGGenerator(
+        model_name="Qwen/Qwen1.5-0.5B-Chat",
+        system_prompt=system_prompt,
         download_dir=DOWNLOAD_DIR,
         )
     
-    SYSTEM_PROMPT = \
-        "You are a helpful assistant for answering questions about books. Use the provided documents to answer the question as best as you can. If you don't know the answer, say you don't know."
-    
     import uvicorn
     port = int(os.getenv("BACKEND_PORT", "8500"))
-    uvicorn.run(app, host="localhost", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=port)
