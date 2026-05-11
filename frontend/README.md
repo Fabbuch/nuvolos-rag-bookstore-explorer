@@ -1,43 +1,39 @@
-# Frontend Server
+# BookBot Frontend
 
-A Python HTTP server that does two things:
+A static one-page chatbot UI for human-language book discovery.
 
-1. **Serves static files** (`index.html`) to the browser.
-2. **Reverse-proxies API requests** to the backend over the Nuvolos internal network.
+The current frontend is intentionally self-contained:
 
-## Why a reverse proxy?
-
-The backend runs on an internal hostname that only Nuvolos pods can reach.
-The browser (on the public internet) can't resolve that hostname, so this
-server accepts the browser's request and forwards it to the backend.
-
-```
-Browser ──► Nuvolos VS Code proxy ──► this server (:3000) ──► backend (:8500)
-                                        serves HTML             internal only
-                                        proxies /documents,
-                                        /query, /health
-```
+- `index.html` renders the BookBot interface.
+- `server.py` serves static files and reverse-proxies `/api/*` to the backend.
+- Chat history is loaded from backend JSON storage, not browser local storage.
 
 ## Running
 
 ```bash
-python server.py
+python3 server.py
 # or
-python start_frontend.py   # daemonizes, saves PID for stop_frontend.py
+python3 start_frontend.py
 ```
 
-## Configuration
+Open:
 
-| Env var        | Default                           | Purpose                          |
-|---------------|-----------------------------------|----------------------------------|
-| `BACKEND_HOST`| `http://<your_hostname>:8500`     | Internal URL of the backend pod  |
+```text
+http://localhost:3000
+```
 
-## Proxied API paths
+## Backend API
 
-| Path          | Method(s)    | Forwarded to backend |
-|--------------|-------------|----------------------|
-| `/health`    | GET         | Yes                  |
-| `/documents` | GET, POST   | Yes                  |
-| `/query`     | POST        | Yes                  |
+The UI uses these routes:
 
-Everything else is served as a static file from this directory.
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/chats` | List shared chats |
+| POST | `/api/chats` | Create a new chat |
+| GET | `/api/chats/{chat_id}` | Load one chat with messages |
+| PATCH | `/api/chats/{chat_id}` | Rename a chat |
+| DELETE | `/api/chats/{chat_id}` | Delete a chat |
+| POST | `/api/chats/{chat_id}/messages` | Send user text and receive assistant recommendations |
+
+The backend can store this in one JSON file for now. No accounts are expected;
+all users share the same chat list.

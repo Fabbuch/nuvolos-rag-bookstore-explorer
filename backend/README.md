@@ -21,6 +21,12 @@ Interactive docs: http://localhost:8500/docs
 |--------|-------------|--------------------------|
 | GET    | `/`         | Root / status            |
 | POST   | `/generate` | Generate response based on a query and a set of documents |
+| GET    | `/api/chats` | List shared chats from JSON history |
+| POST   | `/api/chats` | Create a shared chat |
+| GET    | `/api/chats/{chat_id}` | Load a shared chat |
+| PATCH  | `/api/chats/{chat_id}` | Rename a shared chat |
+| DELETE | `/api/chats/{chat_id}` | Delete a shared chat |
+| POST   | `/api/chats/{chat_id}/messages` | Append a message to a shared chat |
 | GET    | `/health`   | Health check (DB ping)   |
 | POST   | `/documents`| Add a document           |
 | GET    | `/documents`| List all documents       |
@@ -54,6 +60,7 @@ All settings come from environment variables (with sensible defaults):
 | `DB_NAME`    | `nuvolos`                                      | Database name        |
 | `DB_USER`    | `nuvolos`                                      | Database user        |
 | `DB_PASSWORD`| `nuvolos`                                      | Database password    |
+| `CHAT_HISTORY_FILE` | `backend/chat_history.json` | Shared chat history JSON file |
 
 The default `DB_HOST` is a Nuvolos-assigned internal hostname. On the Nuvolos
 internal network every pod gets a hostname like `nv-service-<hash>`, which
@@ -71,4 +78,3 @@ Browser ──► Frontend (port 3000) ──► this backend (port 8500) ──
 
 CORS is set to `allow_origins=["*"]` because the frontend proxy makes the
 requests server-side, not from a browser origin.
-

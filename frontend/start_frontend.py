@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Startup script for RAG frontend server
+Startup script for BookBot frontend server
 This script:
 1. Starts the frontend server
 2. Saves PID for later teardown
@@ -20,7 +20,7 @@ NC = '\033[0m'  # No Color
 
 # Frontend configuration
 FRONTEND_PORT = os.getenv("FRONTEND_PORT", "3000")
-BACKEND_HOST = os.getenv("BACKEND_HOST", "nv-service-8274117e85103f8c55c6f267d3e4eb1f:8500")
+BACKEND_HOST = os.getenv("BACKEND_HOST", "localhost:8500")
 
 # Paths
 SCRIPT_DIR = Path(__file__).parent.absolute()
@@ -78,9 +78,7 @@ def start_frontend():
         cwd=SCRIPT_DIR,
         stdout=frontend_log,
         stderr=subprocess.STDOUT,
-        env={**os.environ, **{
-            "BACKEND_HOST": BACKEND_HOST
-        }}
+        env=os.environ.copy()
     )
     
     # Save PID
@@ -104,7 +102,7 @@ def start_frontend():
 
 def main():
     """Main startup function."""
-    print_colored(GREEN, "=== RAG Frontend Startup ===\n")
+    print_colored(GREEN, "=== BookBot Frontend Startup ===\n")
     
     # Check if already running
     if check_if_running():
@@ -117,7 +115,7 @@ def main():
     # Success message
     print_colored(GREEN, "\n=== Frontend Started! ===\n")
     print(f"Frontend UI: http://localhost:{FRONTEND_PORT}")
-    print(f"Backend API: https://{BACKEND_HOST}")
+    print(f"Backend API: {BACKEND_HOST}")
     print()
     print("To stop the server, run: python3 stop_frontend.py")
 
