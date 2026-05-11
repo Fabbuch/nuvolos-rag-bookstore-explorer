@@ -91,7 +91,7 @@ prometheus_client==0.25.0
 propcache==0.4.1
 protobuf==6.33.6
 psutil==7.2.2
-psycopg2==2.9.12
+psycopg2-binary==2.9.12
 py-cpuinfo==9.0.0
 pybase64==1.4.3
 pycountry==26.2.16

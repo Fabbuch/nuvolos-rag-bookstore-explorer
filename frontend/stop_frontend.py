@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Teardown script for RAG frontend server
+Teardown script for BookBot frontend server
 This script:
 1. Stops the running frontend server
 2. Cleans up PID and log files
@@ -110,7 +110,7 @@ def cleanup_files():
 
 def main():
     """Main teardown function."""
-    print_colored(YELLOW, "=== RAG Frontend Teardown ===\n")
+    print_colored(YELLOW, "=== BookBot Frontend Teardown ===\n")
     
     # Stop frontend server
     if not stop_frontend():

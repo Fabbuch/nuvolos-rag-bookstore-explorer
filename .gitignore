@@ -44,6 +44,16 @@ Thumbs.db
 # Database
 *.db
 *.sqlite3
+backend/chat_history.json
+backend/chat_history.tmp
+
+# Model downloads / caches
+hf_cache/
+vllm_cache/
+space_mounts/
+**/hf_cache/
+**/vllm_cache/
+**/.cache/huggingface/
 
 # Node modules (if any)
 node_modules/
