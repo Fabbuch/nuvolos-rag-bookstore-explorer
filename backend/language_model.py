@@ -1,16 +1,24 @@
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from vllm import LLM, SamplingParams
+import ollama
+from ollama import ResponseError
 
 class RAGGenerator:
-    def __init__(self, model_name: str, download_dir: str, system_prompt: str):
-        self.model = LLM(
-            model=model_name,
-            # download_dir specifies the location where vllm will look for model weights and where it will download them
-            download_dir=download_dir,
-        )
+    def __init__(self, base_model: str, model_name: str, system_prompt: str):
+        self.base_model = base_model
+        self.model_name = model_name
         self.system_prompt = system_prompt
+        # Pull ollama model if it does not exist already in the download_dir:
+        try:
+            ollama.pull(base_model)
+        except ResponseError as e:
+            print(f"Error occurred while pulling base ollama model: {e}")
+        # Create a model instance with the system prompt:
+        try:
+            ollama.create(model_name, from_=base_model, system=system_prompt)
+        except ResponseError as e:
+            print(f"Error occurred while creating ollama model: {e}")
     
-    def generate(self, history: list[dict[str, str]], query: str, retrieved_docs: list[str], sampling_params: SamplingParams) -> str:
+    def generate(self, history: list[dict[str, str]], query: str, retrieved_docs: list[str]) -> str:
         """Generate text conditioned on:
             1) a system prompt
             2) conversation history between the user and the assistant
@@ -25,17 +33,13 @@ class RAGGenerator:
             }
             query: The user's query.
             retrieved_docs: A list of retrieved documents relevant to the current query.
-            sampling_params: Parameters for sampling from the model.
         """
         prompt = self.build_prompt(query, retrieved_docs)
-        response = self.model.chat(
-            [{"role": "system", "content": self.system_prompt}] \
-            + history \
-            # history: [{"role": "user", "content": ...}, {"role": "assistant", "content": ...}, ...]
-            + [{"role": "user", "content": prompt}],
-            sampling_params=sampling_params
-        )
-        return response[0].outputs[0].text
+        response = ollama.chat(
+            self.model_name,
+            messages=[{"role": "system", "content": self.system_prompt}] + history + [{"role": "user", "content": prompt}],
+            )
+        return response.message.content
 
     def build_prompt(self, query: str, retrieved_docs: list[str]) -> str:
         """Construct a prompt following a template like this:

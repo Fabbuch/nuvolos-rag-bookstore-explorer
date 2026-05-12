@@ -21,7 +21,6 @@ except Exception as e:
     PSYCOPG2_IMPORT_ERROR = e
 
 from language_model import load_model, load_tokenizer, RAGGenerator, sentence_transformers_embedding
-from vllm import SamplingParams
 
 app = FastAPI(title="RAG Backend API")
 
@@ -44,27 +43,23 @@ DB_PORT = os.getenv("DB_PORT", "5432")
 DB_NAME = os.getenv("DB_NAME", "nuvolos")
 DB_USER = os.getenv("DB_USER", "nuvolos")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "nuvolos")
-CHAT_HISTORY_FILE = Path(os.getenv("CHAT_HISTORY_FILE", Path(__file__).with_name("chat_history.json")))
 
-# Environment variables for vllm and huggingface cache directories.
-VLLM_CACHE_ROOT=os.getenv("VLLM_CACHE_ROOT", "space_mounts/pars/vllm_cache")
-DOWNLOAD_DIR=os.getenv("DOWNLOAD_DIR", "space_mounts/pars/hf_cache")
-CHAT_MODEL_NAME = "Qwen/Qwen1.5-0.5B-Chat"
+# Environment variables for the generation and embedding models.
+CHAT_MODEL_NAME = "qwen3:1.7b"
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 # Embedding model configuration.
-# TODO: Find a vllm alternative to this if possible.
-EMB_MODEL = load_model(EMBEDDING_MODEL_NAME)
-EMB_TOKENIZER = load_tokenizer(EMBEDDING_MODEL_NAME)
+EMB_MODEL = ...
+EMB_TOKENIZER = ...
 GENERATOR = None
 
 
 def build_rag_generator(system_prompt):
     """Build the Qwen chat generator used by /generate."""
     return RAGGenerator(
-        model_name=CHAT_MODEL_NAME,
-        system_prompt=system_prompt,
-        download_dir=DOWNLOAD_DIR,
+        base_model=CHAT_MODEL_NAME,
+        model_name="rag-generator",
+        system_prompt=system_prompt
     )
 
 def get_db_connection():
@@ -410,17 +405,11 @@ async def generate(query: Query, documents: DocumentList):
     # Get document contents as a list of strings
     documents_strs = [doc.content for doc in documents.documents]
     
-    # Further sampling parameters such as temperature, top_p etc. can be added here.
-    sampling_params=SamplingParams(
-        max_tokens=512,
-        )
-    
     # Generate a response with the LLM using a prompt that incorporates the user question and the retrieved documents
     response = GENERATOR.generate(
         history=[],  # No conversation history for now
         query=query.query,
         retrieved_docs=documents_strs,
-        sampling_params=sampling_params
     )
     
     return {
@@ -443,11 +432,7 @@ if __name__ == "__main__":
     system_prompt = \
         "You are a helpful assistant for answering questions about books. Use the provided documents to answer the question as best as you can. If you don't know the answer, say you don't know."
 
-    GENERATOR = RAGGenerator(
-        model_name=CHAT_MODEL_NAME,
-        system_prompt=system_prompt,
-        download_dir=DOWNLOAD_DIR,
-    )
+    GENERATOR = build_rag_generator(system_prompt)
 
     import uvicorn
     port = int(os.getenv("BACKEND_PORT", "8500"))
