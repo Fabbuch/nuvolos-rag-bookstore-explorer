@@ -20,33 +20,23 @@ Interactive docs: http://localhost:8500/docs
 | Method | Path         | Description              |
 |--------|-------------|--------------------------|
 | GET    | `/`         | Root / status            |
-| POST   | `/generate` | Generate response based on a query and a set of documents |
 | GET    | `/api/chats` | List shared chats from JSON history |
 | POST   | `/api/chats` | Create a shared chat |
 | GET    | `/api/chats/{chat_id}` | Load a shared chat |
 | PATCH  | `/api/chats/{chat_id}` | Rename a shared chat |
 | DELETE | `/api/chats/{chat_id}` | Delete a shared chat |
 | POST   | `/api/chats/{chat_id}/messages` | Append a message to a shared chat |
-| GET    | `/health`   | Health check (DB ping)   |
-| POST   | `/documents`| Add a document           |
-| GET    | `/documents`| List all documents       |
-| POST   | `/query`    | Vector-similarity search |
+| GET    | `/api/health`   | Health check (DB ping)   |
+| POST   | `/api/documents`| Add a document           |
+| GET    | `/api/documents`| List all documents       |
 
 ### Example Usage
 
-- `/generate`:
+- `/api/chats/{chat_id}/messages`:
 ```bash
-curl -X POST http://localhost:8500/generate \
-  -H "Content-Type: application/json" \
-  -d '{"query": 
-        {"query": "What is a good romance book set in france?"},
-        "documents": {
-            "documents": [{
-                "content": "This is a book about...."}
-                },
-                "content": "Review: this book is 9/10..."}
-                }]
-            }'
+curl -X POST http://<BACKEND_HOST>:8500/api/chats/5fb6d4c1-3662-4387-a761-10a0611ae0e7/messages \
+  -H 'Content-Type: application/json' \
+  -d '{"content": "What is a good romance book set in france?"}'
 ```
 
 ## Configuration

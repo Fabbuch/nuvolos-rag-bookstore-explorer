@@ -1,4 +1,4 @@
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from sentence_transformers import SentenceTransformer
 import ollama
 from ollama import ResponseError
 
@@ -57,13 +57,5 @@ class RAGGenerator:
 
 # Load model
 def load_model(model_name):
-    model = AutoModelForCausalLM.from_pretrained(model_name)
+    model = SentenceTransformer(model_name)
     return model
-
-# Load tokenizer
-def load_tokenizer(model_name):
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    return tokenizer
-
-def sentence_transformers_embedding(model, tokenizer, text: str) -> list[float]:
-    return model.encode(text)[0].tolist()

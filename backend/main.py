@@ -20,7 +20,7 @@ except Exception as e:
     RealDictCursor = None
     PSYCOPG2_IMPORT_ERROR = e
 
-from language_model import load_model, load_tokenizer, RAGGenerator, sentence_transformers_embedding
+from language_model import load_model, RAGGenerator
 
 app = FastAPI(title="RAG Backend API")
 
@@ -44,13 +44,12 @@ DB_NAME = os.getenv("DB_NAME", "nuvolos")
 DB_USER = os.getenv("DB_USER", "nuvolos")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "nuvolos")
 
-# Environment variables for the generation and embedding models.
+# Global variables for the generation and embedding models.
 CHAT_MODEL_NAME = "qwen3:1.7b"
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
-# Embedding model configuration.
-EMB_MODEL = ...
-EMB_TOKENIZER = ...
+# Global variables for the models initialized in main.
+EMB_MODEL = None
 GENERATOR = None
 
 
@@ -61,6 +60,10 @@ def build_rag_generator(system_prompt):
         model_name="rag-generator",
         system_prompt=system_prompt
     )
+    
+def build_embedding_model():
+    """Build the sentence transformer embedding model used for documents and queries."""
+    return load_model(EMBEDDING_MODEL_NAME)
 
 def get_db_connection():
     """Create a database connection."""
@@ -76,11 +79,14 @@ def get_db_connection():
     )
 
 
-def init_db():
-    """Initialize the database with a chats table."""
+def init_db(emb_dim):
+    """Initialize the database with a chats and a documents table."""
     try:
         conn = get_db_connection()
         cur = conn.cursor()
+        
+        # Enable pgvector extension
+        cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
         
         # Create a chats table that stores (shared) chats
         cur.execute("""
@@ -91,6 +97,24 @@ def init_db():
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 messages JSONB NOT NULL
             );
+        """)
+        
+        # Create documents table that stores documents with embeddings.
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS documents (
+                id SERIAL PRIMARY KEY,
+                content TEXT NOT NULL,
+                embedding vector(%s),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """, (emb_dim,))
+        
+        # Create index for vector similarity search
+        # Using HNSW index for better performance with small datasets
+        # Note: For very small datasets (<1000 rows), sequential scan might be faster
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS documents_embedding_idx 
+            ON documents USING hnsw (embedding vector_cosine_ops);
         """)
         
         conn.commit()
@@ -116,6 +140,7 @@ class Document(BaseModel):
 
 class Query(BaseModel):
     query: str
+    top_k: int
     
     @validator('query')
     def validate_query(cls, v):
@@ -182,7 +207,7 @@ def write_chat_history(chat):
                     title = EXCLUDED.title,
                     updated_at = EXCLUDED.updated_at,
                     messages = EXCLUDED.messages;
-            """, (chat["id"], chat["title"], chat["updatedAt"], json.dumps(chat["messages"])))      
+            """, (chat["chat_id"], chat["title"], chat["updatedAt"], json.dumps(chat["messages"])))      
         conn.commit()
         cur.close()
         conn.close()
@@ -218,24 +243,13 @@ def get_chat_or_404(chat_id):
         chat = cur.fetchone()
         cur.close()
         conn.close()
-        if not chat:
-            raise HTTPException(status_code=404, detail=f"Chat with id {chat_id} not found")
-        return {"id": chat[0], "title": chat[1], "updatedAt": chat[2], "messages": chat[3]}
     except Exception as e:
         if conn:
             conn.close()
         raise HTTPException(status_code=503, detail=f"Database connection failed: {str(e)}")
-
-
-def create_placeholder_assistant_message():
-    """Temporary assistant reply until the RAG recommendation endpoint is connected."""
-    return {
-        "id": new_id(),
-        "role": "assistant",
-        "content": "I saved your request. Book recommendations are not connected yet.",
-        "recommendations": [],
-        "createdAt": now_iso(),
-    }
+    if not chat:
+        raise HTTPException(status_code=404, detail=f"Chat with id {chat_id} not found")
+    return chat
 
 @app.get("/")
 async def root():
@@ -243,7 +257,7 @@ async def root():
     return {"message": "RAG Backend API", "status": "running"}
 
 
-@app.get("/health")
+@app.get("/api/health")
 async def health():
     """Health check endpoint."""
     conn = None
@@ -274,7 +288,7 @@ async def list_chats():
         cur.close()
         conn.close()
         
-        return [{"id": chat[0], "title": chat[1], "updatedAt": chat[2], "messages": chat[3]} for chat in chats]
+        return chats
     except Exception as e:
         if conn:
             conn.close()
@@ -287,7 +301,7 @@ async def create_chat(payload: ChatCreate | None = Body(default=None)):
     timestamp = now_iso()
     title = payload.title.strip() if payload and payload.title and payload.title.strip() else "New book search"
     new_chat = {
-        "id": new_id(),
+        "chat_id": new_id(),
         "title": title,
         "updatedAt": timestamp,
         "messages": [],
@@ -320,7 +334,7 @@ async def delete_chat(chat_id: str):
 
 @app.post("/api/chats/{chat_id}/messages")
 async def add_chat_message(chat_id: str, payload: ChatMessage):
-    """Append a user message and a temporary assistant response."""
+    """Append a user message and an assistant response. The updated message history is saved."""
     chat = get_chat_or_404(chat_id)
     timestamp = now_iso()
     has_user_message = any(message.get("role") == "user" for message in chat.get("messages", []))
@@ -331,10 +345,16 @@ async def add_chat_message(chat_id: str, payload: ChatMessage):
         "content": payload.content,
         "createdAt": timestamp,
     }
+    
+    documents = query_documents(Query(query=payload.content, top_k=3))
+    
+    documents = [Document(content=doc["content"]) for doc in documents]
+    
+    assistant_message = generate(payload.content, chat.get("messages", []), documents)
 
     chat.setdefault("messages", []).extend([
         user_message,
-        create_placeholder_assistant_message(),
+        assistant_message,
     ])
     if not has_user_message or chat.get("title") == "New book search":
         chat["title"] = make_chat_title(payload.content)
@@ -344,9 +364,9 @@ async def add_chat_message(chat_id: str, payload: ChatMessage):
     return chat
 
 
-@app.post("/documents")
+@app.post("/api/documents")
 async def add_document(document: Document):
-    """Add a document to the database with a simple embedding."""
+    """Add a document and its embedding to the documents table."""
     conn = None
     try:
         embedding = get_embedding(document.content)
@@ -371,7 +391,7 @@ async def add_document(document: Document):
         raise HTTPException(status_code=500, detail=f"Error adding document: {str(e)}")
 
 
-@app.get("/documents")
+@app.get("/api/documents")
 async def list_documents():
     """List all documents in the database."""
     conn = None
@@ -392,47 +412,85 @@ async def list_documents():
         raise HTTPException(status_code=500, detail=f"Error listing documents: {str(e)}")
 
 
-@app.post("/query")
-async def query_documents(query: Query):
+def query_documents(query: Query):
     """Query documents using vector similarity search."""
-    # TODO: Implement this.
+    # Create embedding for the query
+    query_embedding = get_embedding(query.query)
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Find similar documents using cosine similarity
+        cur.execute(
+            """
+            SELECT id, content, 
+                   1 - (embedding <=> %s::vector) as similarity
+            FROM documents
+            WHERE embedding IS NOT NULL
+            ORDER BY embedding <=> %s::vector
+            LIMIT %s;
+            """,
+            (query_embedding, query_embedding, query.top_k)
+        )
+        
+        documents = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        return documents
+    except Exception as e:
+        if conn:
+            conn.close()
+        raise HTTPException(status_code=500, detail=f"Error querying documents: {str(e)}")
     
-@app.post("/generate")
-async def generate(query: Query, documents: DocumentList):
+    
+def generate(query: str, history: list[ChatMessage], documents: DocumentList) -> ChatMessage:
     """Generate an LLM response from a query and a list of retrieved documents."""
     global GENERATOR
 
     # Get document contents as a list of strings
-    documents_strs = [doc.content for doc in documents.documents]
+    documents_strs = [doc.content for doc in documents]
     
     # Generate a response with the LLM using a prompt that incorporates the user question and the retrieved documents
     response = GENERATOR.generate(
-        history=[],  # No conversation history for now
-        query=query.query,
+        history=history,
+        query=query.strip(),
         retrieved_docs=documents_strs,
     )
     
-    return {
-        "query": query.query,
-        "documents": documents.documents,
-        "output": response
-        }
+    assistant_message = {
+        "id": new_id(),
+        "role": "assistant",
+        "content": response,
+        "recommendations": documents_strs,
+        "createdAt": now_iso(),
+    }
+    
+    return assistant_message
 
 def get_embedding(text: str) -> str:
-    """Create a sentence transformer embedding for the text."""
-    embedding = sentence_transformers_embedding(EMB_MODEL, EMB_TOKENIZER, text)
+    """Create a sentence transformer embedding for the text. 
+    The embedding is converted to a string format, so that it can be added to the documents table."""
+    embedding = EMB_MODEL.encode(text).tolist()
     return "[" + ",".join(map(str, embedding)) + "]"
 
 
 if __name__ == "__main__":
-    # Initiliaze database and create tables if they don't exist.
-    init_db()
-    
     # Initialize LLM generator
     system_prompt = \
         "You are a helpful assistant for answering questions about books. Use the provided documents to answer the question as best as you can. If you don't know the answer, say you don't know."
 
     GENERATOR = build_rag_generator(system_prompt)
+    
+    # Initialize embedding model
+    EMB_MODEL = build_embedding_model()
+    
+    # Get the embedding dimension for the given model
+    emb_dim = EMB_MODEL.get_embedding_dimension()
+    
+    # Initialize database and create tables if they don't exist.
+    # emb_dim is used to set the size of the vector column in the documents table.
+    init_db(emb_dim)
 
     import uvicorn
     port = int(os.getenv("BACKEND_PORT", "8500"))
