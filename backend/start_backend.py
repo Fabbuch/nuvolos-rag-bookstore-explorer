@@ -30,9 +30,13 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "nuvolos")
 # Backend configuration
 BACKEND_PORT = os.getenv("BACKEND_PORT", "8500")
 
+# Ollama configuration
+OLLAMA_MODELS = os.getenv("OLLAMA_MODELS", "/space_mounts/pars/ollama_models")
+
 # Paths
 SCRIPT_DIR = Path(__file__).parent.absolute()
 PID_DIR = Path("/tmp")
+OLLAMA_PID_FILE = PID_DIR / "ollama.pid"
 BACKEND_PID_FILE = PID_DIR / "rag_backend.pid"
 BACKEND_LOG_FILE = PID_DIR / "backend.log"
 
@@ -105,6 +109,16 @@ def start_backend():
     # Create log file
     backend_log = open(BACKEND_LOG_FILE, 'w')
     
+    # Start ollama server
+    ollama_process = subprocess.Popen(
+        ["ollama", "serve"],
+        stdout=backend_log,
+        stderr=subprocess.STDOUT,
+        env={**os.environ, **{
+            "OLLAMA_MODELS": OLLAMA_MODELS
+        }}
+    )
+    
     # Start backend server
     backend_process = subprocess.Popen(
         [sys.executable, "main.py"],
@@ -120,9 +134,12 @@ def start_backend():
         }}
     )
     
-    # Save PID
+    # Save PID for ollama
+    OLLAMA_PID_FILE.write_text(str(ollama_process.pid))
+    # Save PID for backend
     BACKEND_PID_FILE.write_text(str(backend_process.pid))
     
+    print_success(f"Ollama server started (PID: {ollama_process.pid})")
     print_success(f"Backend server started (PID: {backend_process.pid})")
     print(f"Running on port {BACKEND_PORT}")
     print()
@@ -130,6 +147,11 @@ def start_backend():
     
     # Wait a moment to check if process starts successfully
     time.sleep(2)
+    
+    if ollama_process.poll() is not None:
+        print_error("Ollama server failed to start")
+        print(f"Check logs at: {BACKEND_LOG_FILE}")
+        return False
     
     if backend_process.poll() is not None:
         print_error("Backend server failed to start")

@@ -35,6 +35,9 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "nuvolos")
 BACKEND_HOST = os.getenv("BACKEND_HOST", "localhost")
 BACKEND_PORT = os.getenv("BACKEND_PORT", "8500")
 
+# Ollama configuration
+OLLAMA_MODELS = os.getenv("OLLAMA_MODELS", "/space_mounts/pars/ollama_models")
+
 # Frontend configuration
 FRONTEND_PORT = os.getenv("FRONTEND_PORT", "3000")
 
@@ -42,8 +45,8 @@ FRONTEND_PORT = os.getenv("FRONTEND_PORT", "3000")
 SCRIPT_DIR = Path(__file__).parent.absolute()
 BACKEND_DIR = SCRIPT_DIR / "backend"
 FRONTEND_DIR = SCRIPT_DIR / "frontend"
-SAMPLE_DATA_FILE = SCRIPT_DIR / "sample_data.csv"
 PID_DIR = Path("/tmp")
+OLLAMA_PID_FILE = PID_DIR / "ollama.pid"
 BACKEND_PID_FILE = PID_DIR / "rag_backend.pid"
 FRONTEND_PID_FILE = PID_DIR / "rag_frontend.pid"
 BACKEND_LOG_FILE = PID_DIR / "backend.log"
@@ -119,7 +122,7 @@ def get_document_count():
 def wait_for_backend(timeout=30):
     """Wait for backend to be ready."""
     print("Waiting for backend to be ready...")
-    backend_url = f"http://{BACKEND_HOST}:{BACKEND_PORT}/health"
+    backend_url = f"http://{BACKEND_HOST}:{BACKEND_PORT}/api/health"
     
     for i in range(timeout):
         try:
@@ -135,100 +138,24 @@ def wait_for_backend(timeout=30):
     return False
 
 
-def load_sample_data():
-    """Load sample data from CSV file into database."""
-    print_header("Step 3: Reading sample data from CSV file...")
-    
-    if not SAMPLE_DATA_FILE.exists():
-        print_error(f"Sample data file not found: {SAMPLE_DATA_FILE}")
-        print("Please ensure sample_data.csv exists in the project directory")
-        return False
-    
-    print_success("Sample data file found\n")
-    
-    print_header("Step 4: Starting backend server (temporarily) to load data...")
-    
-    # Start backend in background
-    backend_log = open(BACKEND_LOG_FILE, 'w')
-    backend_process = subprocess.Popen(
-        [sys.executable, "main.py"],
-        cwd=BACKEND_DIR,
-        stdout=backend_log,
-        stderr=subprocess.STDOUT,
-        env={**os.environ, **{
-            "DB_HOST": DB_HOST,
-            "DB_PORT": DB_PORT,
-            "DB_NAME": DB_NAME,
-            "DB_USER": DB_USER,
-            "DB_PASSWORD": DB_PASSWORD
-        }}
-    )
-    
-    # Save PID
-    BACKEND_PID_FILE.write_text(str(backend_process.pid))
-    
-    # Wait for backend to be ready
-    if not wait_for_backend():
-        backend_process.terminate()
-        backend_log.close()
-        return False
-    
-    print_header("Step 5: Loading documents into database...")
-    
-    # Read and load each document from CSV
-    doc_count = 0
-    backend_url = f"http://{BACKEND_HOST}:{BACKEND_PORT}/documents"
-    
-    try:
-        with open(SAMPLE_DATA_FILE, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                content = row['content']
-                
-                # Add document via API
-                try:
-                    response = requests.post(
-                        backend_url,
-                        json={"content": content},
-                        timeout=10
-                    )
-                    
-                    if response.status_code == 200:
-                        doc_count += 1
-                        print(f"  ✓ Loaded document {doc_count}")
-                    else:
-                        print(f"  ✗ Failed to load document {doc_count + 1}: {response.text}")
-                except Exception as e:
-                    print(f"  ✗ Failed to load document {doc_count + 1}: {e}")
-        
-        print_success(f"\nLoaded {doc_count} documents successfully\n")
-        
-    except Exception as e:
-        print_error(f"Error reading CSV file: {e}")
-        backend_process.terminate()
-        backend_log.close()
-        return False
-    
-    # Stop the temporary backend
-    print("Stopping temporary backend...")
-    backend_process.terminate()
-    try:
-        backend_process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        backend_process.kill()
-    backend_log.close()
-    time.sleep(2)
-    
-    return True
-
-
 def start_servers():
     """Start both backend and frontend servers."""
     print_header("Step 6: Starting servers...")
     
-    # Start backend server
     print(f"Starting backend server on port {BACKEND_PORT}...")
     backend_log = open(BACKEND_LOG_FILE, 'w')
+    
+    # Start ollama server
+    ollama_process = subprocess.Popen(
+        ["ollama", "serve"],
+        stdout=backend_log,
+        stderr=subprocess.STDOUT,
+        env={**os.environ, **{
+            "OLLAMA_MODELS": OLLAMA_MODELS
+        }}
+    )
+    
+    # Start backend server
     backend_process = subprocess.Popen(
         [sys.executable, "main.py"],
         cwd=BACKEND_DIR,
@@ -243,8 +170,12 @@ def start_servers():
         }}
     )
     
-    # Save PID
+    # Save PID for ollama
+    OLLAMA_PID_FILE.write_text(str(ollama_process.pid))
+    # Save PID for backend
     BACKEND_PID_FILE.write_text(str(backend_process.pid))
+    
+    print_success(f"Ollama server started (PID: {ollama_process.pid})")
     print_success(f"Backend server started (PID: {backend_process.pid})")
     
     # Wait for backend to be ready
@@ -259,10 +190,7 @@ def start_servers():
         cwd=FRONTEND_DIR,
         stdout=frontend_log,
         stderr=subprocess.STDOUT,
-        env={**os.environ, **{
-            "BACKEND_HOST": BACKEND_HOST,
-            "BACKEND_PORT": BACKEND_PORT
-        }}
+        env=os.environ.copy()
     )
     
     # Save PID
@@ -294,7 +222,7 @@ def main():
     doc_count = get_document_count()
     print(f"Current document count: {doc_count}")
     
-    # Step 6: Start servers
+    # Step 3: Start servers
     if not start_servers():
         sys.exit(1)
     

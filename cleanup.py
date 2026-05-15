@@ -28,6 +28,7 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "nuvolos")
 
 # Paths
 PID_DIR = Path("/tmp")
+OLLAMA_PID_FILE = PID_DIR / "ollama.pid"
 BACKEND_PID_FILE = PID_DIR / "rag_backend.pid"
 FRONTEND_PID_FILE = PID_DIR / "rag_frontend.pid"
 BACKEND_LOG_FILE = PID_DIR / "backend.log"
@@ -119,6 +120,7 @@ def main():
     print_header("Step 1: Stopping servers...")
     stop_process(BACKEND_PID_FILE, "backend server")
     stop_process(FRONTEND_PID_FILE, "frontend server")
+    stop_process(OLLAMA_PID_FILE, "ollama server")
     
     # Step 3: Clean up files
     cleanup_files()

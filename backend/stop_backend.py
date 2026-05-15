@@ -21,6 +21,7 @@ NC = '\033[0m'  # No Color
 # Paths
 PID_DIR = Path("/tmp")
 BACKEND_PID_FILE = PID_DIR / "rag_backend.pid"
+OLLAMA_PID_FILE = PID_DIR / "ollama.pid"
 BACKEND_LOG_FILE = PID_DIR / "backend.log"
 
 
@@ -44,24 +45,24 @@ def print_error(message):
     print_colored(RED, f"✗ {message}")
 
 
-def stop_backend():
-    """Stop the backend server."""
-    print_header("Stopping backend server...")
+def stop_server(pid_file, server_name):
+    """Stop the backend or ollama server."""
+    print_header(f"Stopping {server_name}...")
     
-    if not BACKEND_PID_FILE.exists():
-        print("Backend server is not running (no PID file found)")
+    if not pid_file.exists():
+        print(f"{server_name} is not running (no PID file found)")
         return True
     
     try:
-        pid = int(BACKEND_PID_FILE.read_text().strip())
-        print(f"Stopping backend server (PID: {pid})...")
+        pid = int(pid_file.read_text().strip())
+        print(f"Stopping {server_name} (PID: {pid})...")
         
         # Check if process exists
         try:
             os.kill(pid, 0)  # Signal 0 just checks if process exists
         except OSError:
-            print("Backend server is not running")
-            BACKEND_PID_FILE.unlink()
+            print(f"{server_name} is not running")
+            pid_file.unlink()
             return True
         
         # Try graceful shutdown first
@@ -88,8 +89,8 @@ def stop_backend():
         except OSError:
             pass
         
-        print_success("Backend server stopped")
-        BACKEND_PID_FILE.unlink()
+        print_success(f"{server_name} stopped")
+        pid_file.unlink()
         return True
         
     except (ValueError, FileNotFoundError) as e:
@@ -113,7 +114,11 @@ def main():
     print_colored(YELLOW, "=== RAG Backend Teardown ===\n")
     
     # Stop backend server
-    if not stop_backend():
+    if not stop_server(BACKEND_PID_FILE, "Backend server"):
+        sys.exit(1)
+    
+    # Stop ollama server
+    if not stop_server(OLLAMA_PID_FILE, "Ollama server"):
         sys.exit(1)
     
     # Clean up files
