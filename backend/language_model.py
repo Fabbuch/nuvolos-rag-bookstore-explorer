@@ -7,16 +7,19 @@ class RAGGenerator:
         self.base_model = base_model
         self.model_name = model_name
         self.system_prompt = system_prompt
-        # Pull ollama model if it does not exist already in the download_dir:
+        # Pull ollama base model if it does not exist already in the OLLAMA_MODELS directory:
         try:
-            ollama.pull(base_model)
+            existing_models = [list_response.model for list_response in ollama.list().models]
+            if base_model not in existing_models:
+                print(f"Pulling base model {base_model}")
+                ollama.pull(base_model)
+            if model_name not in existing_models:
+                print(f"Creating model {model_name} from base model {base_model}.")
+                # Create a model instance with the system prompt:
+                ollama.create(model_name, from_=base_model, system=system_prompt)
+            print(f"Ollama model {model_name} is ready to use.")
         except ResponseError as e:
-            print(f"Error occurred while pulling base ollama model: {e}")
-        # Create a model instance with the system prompt:
-        try:
-            ollama.create(model_name, from_=base_model, system=system_prompt)
-        except ResponseError as e:
-            print(f"Error occurred while creating ollama model: {e}")
+            print(f"Error occurred while loading ollama model: {e}")
     
     def generate(self, history: list[dict[str, str]], query: str, retrieved_docs: list[str]) -> str:
         """Generate text conditioned on:
