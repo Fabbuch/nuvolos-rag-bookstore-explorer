@@ -207,7 +207,7 @@ def write_chat_history(chat):
                     title = EXCLUDED.title,
                     updated_at = EXCLUDED.updated_at,
                     messages = EXCLUDED.messages;
-            """, (chat["chat_id"], chat["title"], chat["updatedAt"], json.dumps(chat["messages"])))      
+            """, (chat["chat_id"], chat["title"], chat["updated_at"], json.dumps(chat["messages"])))      
         conn.commit()
         cur.close()
         conn.close()
@@ -276,7 +276,26 @@ async def health():
 
 @app.get("/api/chats")
 async def list_chats():
-    """List all shared chats from the chats database table."""
+    """List all shared chats from the chats database table.
+    
+    Args:
+        None
+    Returns:
+        List[Dict]:
+            {
+                "chat_id": str,
+                "title": str,
+                "updated_at": str,
+                "messages": List[Dict]:
+                    {
+                        "id": str,
+                        "role": "user" | "assistant",
+                        "content": str,
+                        "createdAt": str,
+                        "recommendations": List[str] (only for assistant messages)
+                    }
+            }
+    """
     conn = None
     try:
         conn = get_db_connection()
@@ -297,13 +316,26 @@ async def list_chats():
 
 @app.post("/api/chats")
 async def create_chat(payload: ChatCreate | None = Body(default=None)):
-    """Create an empty shared chat."""
+    """Create an empty shared chat.
+    
+    Args:
+        payload: (ChatCreate, optional): An optional payload containing a title for the chat.
+        
+    Returns:
+        Dict: The created chat with the following structure:
+            {
+                "chat_id": str,
+                "title": str,
+                "updated_at": str,
+                "messages": List[Dict]
+            }
+    """
     timestamp = now_iso()
     title = payload.title.strip() if payload and payload.title and payload.title.strip() else "New book search"
     new_chat = {
         "chat_id": new_id(),
         "title": title,
-        "updatedAt": timestamp,
+        "updated_at": timestamp,
         "messages": [],
     }
     write_chat_history(new_chat)
@@ -311,15 +343,39 @@ async def create_chat(payload: ChatCreate | None = Body(default=None)):
 
 @app.get("/api/chats/{chat_id}")
 async def get_chat(chat_id: str):
-    """Load one shared chat."""
+    """Load one shared chat.
+    
+    Returns:
+        Dict:
+        {
+            "chat_id": str,
+            "title": str,
+            "updated_at": str,
+            "messages": List[Dict]
+        }
+    """
     return get_chat_or_404(chat_id)
 
 @app.patch("/api/chats/{chat_id}")
 async def rename_chat(chat_id: str, payload: ChatRename):
-    """Rename one shared chat."""
+    """Rename one shared chat.
+    
+    Args:
+        chat_id: The ID of the chat to rename.
+        payload: ChatRename: A payload containing the new title for the chat.
+    
+    Returns:
+        Dict:
+            {
+                "chat_id": str,
+                "title": str,
+                "updated_at": str,
+                "messages": List[Dict]
+            }
+    """
     chat = get_chat_or_404(chat_id)
     chat["title"] = payload.title
-    chat["updatedAt"] = now_iso()
+    chat["updated_at"] = now_iso()
     write_chat_history(chat)
     return chat
 
@@ -334,7 +390,17 @@ async def delete_chat(chat_id: str):
 
 @app.post("/api/chats/{chat_id}/messages")
 async def add_chat_message(chat_id: str, payload: ChatMessage):
-    """Append a user message and an assistant response. The updated message history is saved."""
+    """Append a user message and an assistant response. The updated message history is saved.
+    
+    Returns: 
+        Dict:
+        {
+            "chat_id": str,
+            "title": str,
+            "updated_at": str,
+            "messages": List[Dict]
+        }
+    """
     chat = get_chat_or_404(chat_id)
     timestamp = now_iso()
     has_user_message = any(message.get("role") == "user" for message in chat.get("messages", []))
@@ -358,7 +424,7 @@ async def add_chat_message(chat_id: str, payload: ChatMessage):
     ])
     if not has_user_message or chat.get("title") == "New book search":
         chat["title"] = make_chat_title(payload.content)
-    chat["updatedAt"] = now_iso()
+    chat["updated_at"] = now_iso()
 
     write_chat_history(chat)
     return chat
@@ -393,7 +459,19 @@ async def add_document(document: Document):
 
 @app.get("/api/documents")
 async def list_documents():
-    """List all documents in the database."""
+    """List all documents in the database.
+    
+    Returns:
+        Dict:
+        {
+            "documents": List[Dict]:
+                {
+                    "id": int,
+                    "content": str,
+                    "created_at": str
+                }
+        }
+    """
     conn = None
     try:
         conn = get_db_connection()
@@ -413,7 +491,15 @@ async def list_documents():
 
 
 def query_documents(query: Query):
-    """Query documents using vector similarity search."""
+    """Query documents using vector similarity search.
+    
+    Returns:
+        List[Dict]:
+            {
+                "id": int,
+                "content": str,
+            }
+    """
     # Create embedding for the query
     query_embedding = get_embedding(query.query)
     try:
@@ -445,7 +531,18 @@ def query_documents(query: Query):
     
     
 def generate(query: str, history: list[ChatMessage], documents: DocumentList) -> ChatMessage:
-    """Generate an LLM response from a query and a list of retrieved documents."""
+    """Generate an LLM response from a query and a list of retrieved documents.
+    
+    Returns:
+        Dict:
+        {
+            "id": str,
+            "role": "assistant",
+            "content": str,
+            "recommendations": List[str],
+            "createdAt": str,
+        }
+    """
     global GENERATOR
 
     # Get document contents as a list of strings
@@ -486,10 +583,10 @@ if __name__ == "__main__":
     EMB_MODEL = build_embedding_model()
     
     # Get the embedding dimension for the given model
+    # This is used to set the size of the vector column in the documents table.
     emb_dim = EMB_MODEL.get_embedding_dimension()
     
     # Initialize database and create tables if they don't exist.
-    # emb_dim is used to set the size of the vector column in the documents table.
     init_db(emb_dim)
 
     import uvicorn

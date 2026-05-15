@@ -1,8 +1,6 @@
-# RAG Backend API
+# BookBot Backend API
 
-A FastAPI server that stores documents in PostgreSQL (with pgvector) and
-exposes endpoints for adding, listing, and querying documents via vector
-similarity search.
+A FastAPI server that stores documents and chats in PostgreSQL (with pgvector).
 
 ## Running
 
@@ -12,8 +10,6 @@ python main.py                   # starts on port 8500
 # or
 python start_backend.py          # daemonizes, saves PID for stop_backend.py
 ```
-
-Interactive docs: http://localhost:8500/docs
 
 ## Summary of Endpoints
 
@@ -50,7 +46,6 @@ All settings come from environment variables (with sensible defaults):
 | `DB_NAME`    | `nuvolos`                                      | Database name        |
 | `DB_USER`    | `nuvolos`                                      | Database user        |
 | `DB_PASSWORD`| `nuvolos`                                      | Database password    |
-| `CHAT_HISTORY_FILE` | `backend/chat_history.json` | Shared chat history JSON file |
 
 The default `DB_HOST` is a Nuvolos-assigned internal hostname. On the Nuvolos
 internal network every pod gets a hostname like `nv-service-<hash>`, which
