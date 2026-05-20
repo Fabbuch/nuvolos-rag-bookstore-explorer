@@ -92,7 +92,6 @@ def init_db(emb_dim):
         cur.execute("""
             CREATE TABLE IF NOT EXISTS chats (
                 id SERIAL PRIMARY KEY,
-                chat_id VARCHAR(255) UNIQUE NOT NULL,
                 title VARCHAR(255) NOT NULL,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 messages JSONB NOT NULL
@@ -175,46 +174,16 @@ class ChatMessage(BaseModel):
             raise ValueError('Message cannot be empty')
         return v.strip()
 
-
-def now_iso():
-    """Return a frontend-friendly UTC timestamp."""
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def new_id():
-    """Create a stable JSON-friendly id."""
-    return str(uuid4())
-
+class Chat(BaseModel):
+    id: str
+    title: str
+    messages: List[Dict]
 
 def make_chat_title(text):
     """Use the first few words as a readable default title."""
     words = text.strip().split()
     title = " ".join(words[:7])
     return f"{title}..." if len(words) > 7 else title
-
-
-def write_chat_history(chat):
-    """Write a chat to the chats database table."""
-    conn = None
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()      
-        # Insert the chat
-        cur.execute("""
-            INSERT INTO chats (chat_id, title, updated_at, messages)
-            VALUES (%s, %s, %s, %s)
-                ON CONFLICT (chat_id) DO UPDATE SET
-                    title = EXCLUDED.title,
-                    updated_at = EXCLUDED.updated_at,
-                    messages = EXCLUDED.messages;
-            """, (chat["chat_id"], chat["title"], chat["updated_at"], json.dumps(chat["messages"])))      
-        conn.commit()
-        cur.close()
-        conn.close()
-    except Exception as e:
-        if conn:
-            conn.close()
-        raise HTTPException(status_code=500, detail=f"Failed to connect to the database: {str(e)}")
     
 def delete_chat_history(chat_id):
     """Delete a chat from the chats database table."""
@@ -223,7 +192,7 @@ def delete_chat_history(chat_id):
         conn = get_db_connection()
         cur = conn.cursor()      
         # Delete the chat
-        cur.execute("DELETE FROM chats WHERE chat_id = %s;", (chat_id,))
+        cur.execute("DELETE FROM chats WHERE id = %s;", (chat_id,))
         conn.commit()
         cur.close()
         conn.close()
@@ -232,6 +201,41 @@ def delete_chat_history(chat_id):
             conn.close()
         raise HTTPException(status_code=500, detail=f"Failed to connect to the database: {str(e)}")
 
+def update_chat(new_chat: Chat):
+    """Update a chat's title or message history in the database.
+    
+    Args:
+        new_chat: Chat: The chat object containing the updated title and/or messages.
+    
+    Returns:
+        Dict:
+            {
+                "id": str,
+                "title": str,
+                "updated_at": str,
+                "messages": List[Dict]
+            }
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()      
+        # Update the chat title and messages
+        cur.execute("""
+            UPDATE chats
+            SET title = %s, messages = %s, updated_at = DEFAULT
+            WHERE id = %s
+            RETURNING id, title, updated_at, messages;
+            """, (new_chat.title, json.dumps(new_chat.messages), new_chat.id))      
+        chat = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+        return chat
+    except Exception as e:
+        if conn:
+            conn.close()
+        raise HTTPException(status_code=500, detail=f"Failed to connect to the database: {str(e)}")
 
 def get_chat_or_404(chat_id):
     """Helper to find a chat by id or raise 404."""
@@ -239,7 +243,7 @@ def get_chat_or_404(chat_id):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("SELECT chat_id, title, updated_at, messages FROM chats WHERE chat_id = %s;", (chat_id,))
+        cur.execute("SELECT id, title, updated_at, messages FROM chats WHERE id = %s;", (chat_id,))
         chat = cur.fetchone()
         cur.close()
         conn.close()
@@ -283,7 +287,7 @@ async def list_chats():
     Returns:
         List[Dict]:
             {
-                "chat_id": str,
+                "id": str,
                 "title": str,
                 "updated_at": str,
                 "messages": List[Dict]:
@@ -301,7 +305,7 @@ async def list_chats():
         conn = get_db_connection()
         cur = conn.cursor()
         
-        cur.execute("SELECT chat_id, title, updated_at, messages FROM chats ORDER BY updated_at DESC;")
+        cur.execute("SELECT id, title, updated_at, messages FROM chats ORDER BY updated_at DESC;")
         chats = cur.fetchall()
         
         cur.close()
@@ -324,22 +328,43 @@ async def create_chat(payload: ChatCreate | None = Body(default=None)):
     Returns:
         Dict: The created chat with the following structure:
             {
-                "chat_id": str,
+                "id": str,
                 "title": str,
                 "updated_at": str,
                 "messages": List[Dict]
             }
     """
-    timestamp = now_iso()
     title = payload.title.strip() if payload and payload.title and payload.title.strip() else "New book search"
-    new_chat = {
-        "chat_id": new_id(),
-        "title": title,
-        "updated_at": timestamp,
-        "messages": [],
-    }
-    write_chat_history(new_chat)
-    return new_chat
+    
+    # Insert an empty chat into the database and return the id for the frontend.
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()      
+        # Insert the chat
+        cur.execute("""
+            INSERT INTO chats (title, messages)
+            VALUES (%s, %s)
+                ON CONFLICT (id) DO UPDATE SET
+                    title = EXCLUDED.title,
+                    messages = EXCLUDED.messages
+            RETURNING id, title, updated_at, messages;
+            """, (title, json.dumps([])))      
+        chat = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return {
+            "id": str(chat["id"]),
+            "title": chat["title"],
+            "updated_at": chat["updated_at"],
+            "messages": chat["messages"],
+        }
+    except Exception as e:
+        if conn:
+            conn.close()
+        raise HTTPException(status_code=500, detail=f"Failed to connect to the database: {str(e)}")
 
 @app.get("/api/chats/{chat_id}")
 async def get_chat(chat_id: str):
@@ -348,7 +373,7 @@ async def get_chat(chat_id: str):
     Returns:
         Dict:
         {
-            "chat_id": str,
+            "id": str,
             "title": str,
             "updated_at": str,
             "messages": List[Dict]
@@ -367,25 +392,35 @@ async def rename_chat(chat_id: str, payload: ChatRename):
     Returns:
         Dict:
             {
-                "chat_id": str,
+                "id": str,
                 "title": str,
                 "updated_at": str,
                 "messages": List[Dict]
             }
     """
-    chat = get_chat_or_404(chat_id)
-    chat["title"] = payload.title
-    chat["updated_at"] = now_iso()
-    write_chat_history(chat)
-    return chat
-
+    old_chat = get_chat_or_404(chat_id)
+    
+    new_chat = Chat(
+        id=chat_id,
+        title=payload.title,
+        messages=old_chat.get("messages", []),
+    )
+    
+    new_chat = update_chat(new_chat)
+        
+    return {
+        "id": str(new_chat["id"]),
+        "title": new_chat["title"],
+        "updated_at": new_chat["updated_at"],
+        "messages": new_chat["messages"],
+    }
 
 @app.delete("/api/chats/{chat_id}")
 async def delete_chat(chat_id: str):
     """Delete one shared chat."""
     get_chat_or_404(chat_id)
     delete_chat_history(chat_id)
-    return {"deleted": True, "chatId": chat_id}
+    return {"deleted": True, "id": chat_id}
 
 
 @app.post("/api/chats/{chat_id}/messages")
@@ -395,21 +430,18 @@ async def add_chat_message(chat_id: str, payload: ChatMessage):
     Returns: 
         Dict:
         {
-            "chat_id": str,
+            "id": str,
             "title": str,
             "updated_at": str,
             "messages": List[Dict]
         }
     """
     chat = get_chat_or_404(chat_id)
-    timestamp = now_iso()
     has_user_message = any(message.get("role") == "user" for message in chat.get("messages", []))
 
     user_message = {
-        "id": new_id(),
         "role": "user",
         "content": payload.content,
-        "createdAt": timestamp,
     }
     
     documents = query_documents(Query(query=payload.content, top_k=3))
@@ -424,10 +456,10 @@ async def add_chat_message(chat_id: str, payload: ChatMessage):
     ])
     if not has_user_message or chat.get("title") == "New book search":
         chat["title"] = make_chat_title(payload.content)
-    chat["updated_at"] = now_iso()
 
-    write_chat_history(chat)
-    return chat
+    new_chat = Chat(id=chat_id, title=chat["title"], messages=chat["messages"])
+    new_chat_out = update_chat(new_chat)
+    return new_chat_out
 
 
 @app.post("/api/documents")
@@ -536,11 +568,9 @@ def generate(query: str, history: list[ChatMessage], documents: DocumentList) ->
     Returns:
         Dict:
         {
-            "id": str,
             "role": "assistant",
             "content": str,
-            "recommendations": List[str],
-            "createdAt": str,
+            "recommendations": List[str]
         }
     """
     global GENERATOR
@@ -556,11 +586,9 @@ def generate(query: str, history: list[ChatMessage], documents: DocumentList) ->
     )
     
     assistant_message = {
-        "id": new_id(),
         "role": "assistant",
         "content": response,
         "recommendations": documents_strs,
-        "createdAt": now_iso(),
     }
     
     return assistant_message
