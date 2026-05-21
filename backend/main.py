@@ -167,6 +167,8 @@ class ChatRename(BaseModel):
 
 class ChatMessage(BaseModel):
     content: str
+    role: str | None = "user"
+    createdAt: str | None = None
 
     @validator('content')
     def validate_content(cls, v):
@@ -178,6 +180,10 @@ class Chat(BaseModel):
     id: str
     title: str
     messages: List[Dict]
+    
+def now_iso():
+    """Return a frontend-friendly UTC timestamp."""
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 def make_chat_title(text):
     """Use the first few words as a readable default title."""
@@ -433,7 +439,7 @@ async def add_chat_message(chat_id: str, payload: ChatMessage):
             "id": str,
             "title": str,
             "updated_at": str,
-            "messages": List[Dict]
+            "messages": List[ChatMessage]
         }
     """
     chat = get_chat_or_404(chat_id)
@@ -442,6 +448,7 @@ async def add_chat_message(chat_id: str, payload: ChatMessage):
     user_message = {
         "role": "user",
         "content": payload.content,
+        "createdAt": now_iso(),
     }
     
     documents = query_documents(Query(query=payload.content, top_k=3))
@@ -589,6 +596,7 @@ def generate(query: str, history: list[ChatMessage], documents: DocumentList) ->
         "role": "assistant",
         "content": response,
         "recommendations": documents_strs,
+        "createdAt": now_iso(),
     }
     
     return assistant_message
