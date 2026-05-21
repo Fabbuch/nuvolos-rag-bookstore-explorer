@@ -102,7 +102,9 @@ def init_db(emb_dim):
         cur.execute("""
             CREATE TABLE IF NOT EXISTS documents (
                 id SERIAL PRIMARY KEY,
-                content TEXT NOT NULL,
+                title VARCHAR(255) NOT NULL,
+                author VARCHAR(255) NOT NULL,
+                description TEXT NOT NULL,
                 embedding vector(%s),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
@@ -126,14 +128,16 @@ def init_db(emb_dim):
 
 ### Pydantic model definitions for request validation.
 class Document(BaseModel):
-    content: str
+    author: str
+    title: str
+    description: str
     
-    @validator('content')
-    def validate_content(cls, v):
+    @validator('description')
+    def validate_description(cls, v):
         if not v or not v.strip():
-            raise ValueError('Content cannot be empty')
+            raise ValueError('Description cannot be empty')
         if len(v) > 10000:  # 10KB limit
-            raise ValueError('Content exceeds maximum length of 10000 characters')
+            raise ValueError('Description exceeds maximum length of 10000 characters')
         return v
 
 
@@ -453,8 +457,6 @@ async def add_chat_message(chat_id: str, payload: ChatMessage):
     
     documents = query_documents(Query(query=payload.content, top_k=3))
     
-    documents = [Document(content=doc["content"]) for doc in documents]
-    
     assistant_message = generate(payload.content, chat.get("messages", []), documents)
 
     chat.setdefault("messages", []).extend([
@@ -474,14 +476,14 @@ async def add_document(document: Document):
     """Add a document and its embedding to the documents table."""
     conn = None
     try:
-        embedding = get_embedding(document.content)
+        embedding = get_embedding(document.description)
         
         conn = get_db_connection()
         cur = conn.cursor()
         
         cur.execute(
-            "INSERT INTO documents (content, embedding) VALUES (%s, %s) RETURNING id;",
-            (document.content, embedding)
+            "INSERT INTO documents (author, title, description, embedding) VALUES (%s, %s, %s, %s) RETURNING id;",
+            (document.author, document.title, document.description, embedding)
         )
         doc_id = cur.fetchone()["id"]
         
@@ -503,12 +505,7 @@ async def list_documents():
     Returns:
         Dict:
         {
-            "documents": List[Dict]:
-                {
-                    "id": int,
-                    "content": str,
-                    "created_at": str
-                }
+            "documents": List[Document]
         }
     """
     conn = None
@@ -516,7 +513,7 @@ async def list_documents():
         conn = get_db_connection()
         cur = conn.cursor()
         
-        cur.execute("SELECT id, content, created_at FROM documents ORDER BY id;")
+        cur.execute("SELECT id, author, title, description, created_at FROM documents ORDER BY id;")
         documents = cur.fetchall()
         
         cur.close()
@@ -533,11 +530,7 @@ def query_documents(query: Query):
     """Query documents using vector similarity search.
     
     Returns:
-        List[Dict]:
-            {
-                "id": int,
-                "content": str,
-            }
+        List[Document]
     """
     # Create embedding for the query
     query_embedding = get_embedding(query.query)
@@ -548,7 +541,7 @@ def query_documents(query: Query):
         # Find similar documents using cosine similarity
         cur.execute(
             """
-            SELECT id, content, 
+            SELECT id, author, title, description, 
                    1 - (embedding <=> %s::vector) as similarity
             FROM documents
             WHERE embedding IS NOT NULL
@@ -558,7 +551,7 @@ def query_documents(query: Query):
             (query_embedding, query_embedding, query.top_k)
         )
         
-        documents = cur.fetchall()
+        documents = [Document(**doc) for doc in cur.fetchall()]
         cur.close()
         conn.close()
         
@@ -577,13 +570,14 @@ def generate(query: str, history: list[ChatMessage], documents: DocumentList) ->
         {
             "role": "assistant",
             "content": str,
-            "recommendations": List[str]
+            "recommendations": List[Dict],
+            "createdAt": str,
         }
     """
     global GENERATOR
 
-    # Get document contents as a list of strings
-    documents_strs = [doc.content for doc in documents]
+    # Get recommendations as a list of strings to pass to the generator.
+    documents_strs = [f"Title: {doc.title}\nAuthor: {doc.author}\nDescription: {doc.description}" for doc in documents]
     
     # Generate a response with the LLM using a prompt that incorporates the user question and the retrieved documents
     response = GENERATOR.generate(
@@ -595,7 +589,7 @@ def generate(query: str, history: list[ChatMessage], documents: DocumentList) ->
     assistant_message = {
         "role": "assistant",
         "content": response,
-        "recommendations": documents_strs,
+        "recommendations": [{"title": doc.title, "author": doc.author, "description": doc.description} for doc in documents],
         "createdAt": now_iso(),
     }
     
